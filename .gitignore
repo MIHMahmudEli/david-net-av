@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+
+# Data & weights (never commit raw media or checkpoints)
+/data/
+/weights/
+runs/
+*.pt
+*.pth
+*.ckpt
+*.tar
+*.mp4
+*.wav
+*.npy
+!src/data/splits/*.jsonl
+
+# Notebooks / logs
+.ipynb_checkpoints/
+wandb/
+*.log
+eval_report*.json
+
+# Local tooling
+.pytest_cache/
+.claude/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Node (ui)
+node_modules/
+.next/
+.env.local

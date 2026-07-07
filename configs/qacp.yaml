@@ -1,0 +1,30 @@
+# QACP Stage-0 pretraining config (docs/02_architecture.md §8b).
+# Uses REAL (RVRA) clips only; pseudo-quadrants are constructed on the fly
+# (offline + cached-feature variant preferred on DGX Spark).
+seed: 42
+
+d_model: 768
+n_heads: 8
+n_fusion_layers: 4
+dropout: 0.1
+use_sync: true
+use_disentangle: true
+
+video_backbone: fallback       # videomae for real runs
+audio_backbone: fallback       # wavlm for real runs
+freeze_blocks: 12              # Stage 0: encoders fully frozen
+freeze_feature_extractor: true
+
+n_frames: 16
+audio_len: 64000
+shard_root: null
+train_manifest: src/data/splits/train.jsonl   # filtered to RVRA inside the script
+
+batch_size: 8                  # SupCon wants larger batches; raise on the Spark (128 GB)
+num_workers: 0
+epochs: 20
+lr: 1.0e-4
+weight_decay: 1.0e-4
+log_every: 10
+out_dir: runs/qacp
+qacp_temperature: 0.1

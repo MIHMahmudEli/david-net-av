@@ -1,0 +1,48 @@
+# DAVID-Net-Base research config. See docs/02_architecture.md and docs/04_experiments.md.
+seed: 42
+
+# --- model ---
+d_model: 768
+n_heads: 8
+n_fusion_layers: 4
+dropout: 0.1
+use_sync: true
+use_disentangle: true
+compose_quadrant: false        # true = derive quadrant from H_v * H_a (logical consistency)
+
+# --- backbones ---
+# Set to "videomae"/"wavlm" to use pretrained SSL encoders (requires transformers + weights).
+# Leave as "fallback" for a no-download dry run.
+video_backbone: fallback       # videomae | fallback
+audio_backbone: fallback       # wavlm | fallback
+video_model_name: MCG-NJU/videomae-base
+audio_model_name: microsoft/wavlm-base-plus
+freeze_blocks: 6
+freeze_feature_extractor: true
+
+# --- stage-1 warm start (set to a QACP checkpoint after running pretrain_qacp) ---
+init_from: null                # e.g. runs/qacp/qacp_epoch19.pt
+
+# --- data ---
+n_frames: 16
+audio_len: 64000               # 4 s @ 16 kHz
+shard_root: null               # dir of preprocessed *_video.pt / *_audio.pt shards
+train_manifest: src/data/splits/train.jsonl
+
+# --- optimization ---
+batch_size: 4
+num_workers: 0
+epochs: 30
+lr: 1.0e-4
+weight_decay: 1.0e-4
+log_every: 10
+out_dir: runs
+
+# --- loss weights (docs/02_architecture.md §8) ---
+loss_weights:
+  v: 1.0
+  a: 1.0
+  quad: 0.5
+  loc: 0.5
+  sync: 0.3
+  disentangle: 0.1

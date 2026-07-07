@@ -1,0 +1,22 @@
+# Core (pipeline runs on these alone, using fallback encoders + dummy data)
+torch>=2.1
+numpy>=1.24
+scikit-learn>=1.3
+pyyaml>=6.0
+
+# Real backbones / preprocessing (uncomment when using videomae/wavlm + real data)
+# transformers>=4.40
+# torchaudio>=2.1
+# opencv-python-headless>=4.9
+# mediapipe>=0.10
+# ffmpeg-python>=0.2
+# webdataset>=0.2
+# librosa>=0.10
+
+# Experiment tracking (optional)
+# wandb>=0.16
+
+# Serving
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9

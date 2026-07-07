@@ -1,0 +1,11 @@
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9
+torch>=2.1
+numpy>=1.24
+pyyaml>=6.0
+# add for real inference:
+# transformers>=4.40
+# torchaudio>=2.1
+# opencv-python-headless>=4.9
+# mediapipe>=0.10   # or retina-face
