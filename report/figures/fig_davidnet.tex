@@ -1,0 +1,102 @@
+% ------------------------------------------------------------------
+% DAVID-Net architecture diagram (TikZ). Input via \input{} inside a
+% figure environment. Color code: blue = video branch, orange = audio
+% branch, violet = consistency path, green = decision heads.
+% ------------------------------------------------------------------
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  font=\scriptsize,
+  box/.style={draw, rounded corners=2pt, align=center, inner sep=5pt,
+              minimum height=0.95cm, minimum width=1.9cm},
+  vbox/.style={box, fill=blue!12},
+  abox/.style={box, fill=orange!20},
+  cbox/.style={box, fill=violet!14},
+  hbox/.style={box, fill=green!16},
+  obox/.style={box, fill=gray!10},
+  emb/.style={box, fill=white, minimum width=1.1cm},
+  arr/.style={-{Stealth[length=2.2mm]}, semithick},
+  carr/.style={arr, violet!70!black}
+]
+
+% ---------------- video branch (top row) ----------------
+\node[vbox] (vin) at (0, 2.4)  {Input video\\(25 fps frames)};
+\node[vbox] (vcrop) at (3.0, 2.4) {Face + mouth\\crop \& align};
+\node[vbox] (venc) at (6.0, 2.4) {VideoMAE\\encoder (frozen)};
+\node[vbox] (vtok) at (9.0, 2.4) {$V \in \mathbb{R}^{L_v \times d}$\\video tokens};
+
+% ---------------- audio branch (bottom row) ----------------
+\node[abox] (ain) at (0, -2.4)  {Input audio\\(waveform)};
+\node[abox] (aprep) at (3.0, -2.4) {Resample 16 kHz\\+ normalize};
+\node[abox] (aenc) at (6.0, -2.4) {WavLM\\encoder (frozen)};
+\node[abox] (atok) at (9.0, -2.4) {$A \in \mathbb{R}^{L_a \times d}$\\audio tokens};
+
+% ---------------- sync module (middle) ----------------
+\node[cbox] (sync) at (9.0, 0) {Sync module\\(windowed InfoNCE)};
+
+% ---------------- fusion ----------------
+\node[box, fill=teal!12, minimum height=4.6cm, minimum width=2.3cm]
+  (fusion) at (12.0, 0) {Disentangled\\cross-modal\\fusion\\(self- +\\gated cross-\\attention)};
+
+% ---------------- embeddings ----------------
+\node[emb, fill=blue!8]   (zv) at (14.6, 2.4)  {$z_v$};
+\node[emb, fill=violet!8] (zc) at (14.6, 0)    {$z_c$};
+\node[emb, fill=orange!12](za) at (14.6, -2.4) {$z_a$};
+
+% ---------------- heads ----------------
+\node[hbox] (hv)   at (17.2, 3.3)  {$H_v$: video\\real/fake};
+\node[hbox] (hq)   at (17.2, 1.1)  {$H_{quad}$:\\4-quadrant};
+\node[hbox] (hloc) at (17.2, -1.1) {$H_{loc}$: temporal\\localization};
+\node[hbox] (ha)   at (17.2, -3.3) {$H_a$: audio\\real/fake};
+
+% ---------------- outputs ----------------
+\node[obox] (ov)   at (20.0, 3.3)  {$P(\text{video fake})$};
+\node[obox] (oq)   at (20.0, 1.1)  {RVRA / RVFA /\\FVRA / FVFA};
+\node[obox] (oloc) at (20.0, -1.1) {$\hat{m}_v(t),\ \hat{m}_a(t)$\\+ sync curve $s_t$};
+\node[obox] (oa)   at (20.0, -3.3) {$P(\text{audio fake})$};
+
+% ---------------- arrows: branches ----------------
+\draw[arr] (vin) -- (vcrop);
+\draw[arr] (vcrop) -- (venc);
+\draw[arr] (venc) -- (vtok);
+\draw[arr] (ain) -- (aprep);
+\draw[arr] (aprep) -- (aenc);
+\draw[arr] (aenc) -- (atok);
+
+% tokens -> sync
+\draw[carr] (vtok) -- (sync);
+\draw[carr] (atok) -- (sync);
+
+% tokens -> fusion
+\draw[arr] (vtok.east) -- (fusion.west |- vtok);
+\draw[arr] (atok.east) -- (fusion.west |- atok);
+\draw[carr] (sync.east) -- (fusion.west |- sync);
+
+% fusion -> embeddings
+\draw[arr]  (fusion.east |- zv) -- (zv);
+\draw[carr] (fusion.east |- zc) -- (zc);
+\draw[arr]  (fusion.east |- za) -- (za);
+
+% embeddings -> heads
+\draw[arr]  (zv) -- (hv.west);
+\draw[carr] (zc) -- (hv.west);
+\draw[arr]  (za) -- (ha.west);
+\draw[carr] (zc) -- (ha.west);
+\draw[arr]  (zv) -- (hq.west);
+\draw[arr]  (za) -- (hq.west);
+\draw[carr] (zc) -- (hq.west);
+\draw[arr]  (zv) -- (hloc.west);
+\draw[arr]  (za) -- (hloc.west);
+\draw[carr] (zc) -- (hloc.west);
+
+% heads -> outputs
+\draw[arr] (hv) -- (ov);
+\draw[arr] (hq) -- (oq);
+\draw[arr] (hloc) -- (oloc);
+\draw[arr] (ha) -- (oa);
+
+% disentanglement annotation
+\node[align=center, violet!60!black] at (14.6, -4.4)
+  {$\mathcal{L}_{dis}$: $z_c \perp z_v,\ z_c \perp z_a$\\(orthogonality penalty)};
+\draw[carr, dashed] (14.6, -4.0) -- (zc.south);
+
+\end{tikzpicture}}%

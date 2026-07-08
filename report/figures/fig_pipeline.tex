@@ -1,0 +1,64 @@
+% ------------------------------------------------------------------
+% Data collection / processing pipeline diagram (TikZ):
+% raw corpora -> unified manifest -> preprocessing -> feature cache ->
+% splits -> training / evaluation -> deployment.
+% ------------------------------------------------------------------
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  font=\scriptsize,
+  box/.style={draw, rounded corners=2pt, align=center, inner sep=5pt,
+              minimum height=1.0cm, minimum width=2.3cm},
+  data/.style={box, fill=gray!12},
+  proc/.style={box, fill=blue!10},
+  store/.style={box, fill=yellow!22},
+  eval/.style={box, fill=green!14},
+  dep/.style={box, fill=violet!12},
+  arr/.style={-{Stealth[length=2.2mm]}, semithick}
+]
+
+% raw datasets
+\node[data, minimum height=2.6cm, minimum width=2.6cm] (raw) at (0, 0)
+  {Benchmark corpora\\[2pt]FakeAVCeleb\\AV-Deepfake1M\\LAV-DF, DFDC,\\KoDF, ASVspoof};
+
+% manifest
+\node[proc] (man) at (3.6, 0)
+  {Unified manifest\\(per-modality labels,\\quadrant, segments,\\generator, meta)};
+
+% preprocessing split into two
+\node[proc, fill=blue!14] (vprep) at (7.2, 1.4)
+  {Video: face detect,\\track, align;\\face + mouth crops};
+\node[proc, fill=orange!18] (aprep) at (7.2, -1.4)
+  {Audio: 16 kHz mono,\\loudness normalize};
+
+% feature cache
+\node[store] (cache) at (10.8, 0)
+  {Feature cache\\(frozen VideoMAE /\\WavLM, one pass,\\local NVMe)};
+
+% splits
+\node[proc] (splits) at (14.2, 0)
+  {Committed splits\\subject-disjoint /\\LOGO /\\cross-dataset};
+
+% training & evaluation
+\node[eval] (train) at (17.6, 1.4)
+  {Stage 0 QACP +\\Stage 1 training\\(DGX Spark, BF16)};
+\node[eval] (evaln) at (17.6, -1.4)
+  {Evaluation: AUC, EER,\\quadrant, AP@IoU,\\ECE, robustness, fairness};
+
+% deployment
+\node[dep, minimum height=1.2cm] (deploy) at (21.2, 0)
+  {Deployment:\\FastAPI (HF Space)\\+ Next.js UI};
+
+% arrows
+\draw[arr] (raw) -- (man);
+\draw[arr] (man.east) -- (vprep.west);
+\draw[arr] (man.east) -- (aprep.west);
+\draw[arr] (vprep.east) -- (cache.west);
+\draw[arr] (aprep.east) -- (cache.west);
+\draw[arr] (cache) -- (splits);
+\draw[arr] (splits.east) -- (train.west);
+\draw[arr] (splits.east) -- (evaln.west);
+\draw[arr] (train.south) -- (evaln.north);
+\draw[arr] (train.east) -- (deploy.west);
+\draw[arr] (evaln.east) -- (deploy.west);
+
+\end{tikzpicture}}%

@@ -37,14 +37,18 @@ stream $x_a$. The framework predicts:
 \subsection{DAVID-Net Architecture}
 \label{sec:davidnet}
 
-% \begin{figure}[t]
-%   \centering
-%   \includegraphics[width=\textwidth]{architecture_overview}
-%   \caption{Overview of the proposed DAVID-Net architecture.}
-%   \label{fig:architecture}
-% \end{figure}
-\todo{Insert architecture diagram (Figure) and refer to it here.}
+\begin{figure}[t]
+  \centering
+  \input{figures/fig_davidnet}
+  \caption{Overview of the proposed DAVID-Net architecture. Blue denotes the
+  video branch, orange the audio branch, violet the cross-modal consistency
+  path, and green the multi-task decision heads. The consistency embedding
+  $z_c$ is kept disentangled from the modality-specific authenticity
+  embeddings $z_v$ and $z_a$.}
+  \label{fig:architecture}
+\end{figure}
 
+The overall architecture is shown in Figure~\ref{fig:architecture}.
 DAVID-Net is built on the observation that ``is stream $X$ internally
 authentic?'' and ``do the two streams agree with each other?'' are different
 questions. Fusing them prematurely allows shortcut learning (e.g., labeling
@@ -99,7 +103,20 @@ and fail on unseen synthesis methods. QACP instead pretrains the embedding
 space on forgeries \emph{constructed from pristine data alone}, so the space
 encodes what manipulation does to a stream rather than what a particular
 generator looks like. Starting from verified-real (RVRA) clips only, five
-pseudo-classes are manufactured (Table~\ref{tab:qacp-classes}).
+pseudo-classes are manufactured (Table~\ref{tab:qacp-classes}); the complete
+two-stage training flow is illustrated in Figure~\ref{fig:qacp}.
+
+\begin{figure}[t]
+  \centering
+  \input{figures/fig_qacp}
+  \caption{Quadrant-Aware Contrastive Pretraining (QACP). All four
+  authenticity quadrants plus the real-but-mismatched class are constructed
+  from pristine clips alone; three supervised-contrastive losses with
+  different label partitions structure the three embedding spaces (Stage~0),
+  after which the network warm-starts supervised multi-task fine-tuning
+  (Stage~1).}
+  \label{fig:qacp}
+\end{figure}
 
 \begin{table}[h]
 \centering
@@ -192,7 +209,18 @@ to a unified manifest schema with per-modality labels, quadrant, manipulated
 intervals, generator identity, and demographic metadata, making the analysis
 reproducible from committed configuration files. Splits are subject-disjoint;
 leave-one-generator-out (LOGO) splits hold out one manipulation method
-entirely. \todo{Add pipeline diagram figure.}
+entirely. The end-to-end data pipeline, from raw corpora to the deployed
+service, is shown in Figure~\ref{fig:pipeline}.
+
+\begin{figure}[t]
+  \centering
+  \input{figures/fig_pipeline}
+  \caption{The end-to-end data collection and processing pipeline. Encoder
+  features are cached once (frozen backbones), making every subsequent
+  training run inexpensive and every reported number reproducible from
+  committed manifests and split files.}
+  \label{fig:pipeline}
+\end{figure}
 
 Experiments are implemented in PyTorch and executed on an NVIDIA DGX Spark
 system (GB10 Grace--Blackwell, 128\,GB unified memory) using BF16 precision and

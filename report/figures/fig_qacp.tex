@@ -1,0 +1,80 @@
+% ------------------------------------------------------------------
+% QACP two-stage training diagram (TikZ): synthetic quadrant
+% construction from pristine clips -> factorized SupCon pretraining
+% (Stage 0) -> supervised multi-task fine-tuning (Stage 1).
+% ------------------------------------------------------------------
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  font=\scriptsize,
+  box/.style={draw, rounded corners=2pt, align=center, inner sep=5pt,
+              minimum height=0.9cm, minimum width=2.2cm},
+  src/.style={box, fill=gray!12},
+  tr/.style={box, fill=yellow!25},
+  pc/.style={box, fill=cyan!12, minimum width=2.6cm},
+  loss/.style={box, fill=red!10},
+  st/.style={box, fill=green!14},
+  arr/.style={-{Stealth[length=2.2mm]}, semithick}
+]
+
+% source
+\node[src, minimum height=1.4cm] (real) at (0, 0)
+  {Pristine clips\\(RVRA only)\\\emph{no generator}\\\emph{outputs used}};
+
+% transforms
+\node[tr] (cs)  at (4.0, 2.6)  {Vocoder\\copy-synthesis\\(audio)};
+\node[tr] (sb)  at (4.0, 0.9)  {Self-blended\\face video};
+\node[tr] (bo)  at (4.0, -0.9) {Both\\transforms};
+\node[tr] (mm)  at (4.0, -2.6) {Cross-clip real\\audio swap};
+
+% pseudo-classes
+\node[pc] (prvra) at (8.0, 4.0)  {pseudo-RVRA\\(untouched)};
+\node[pc] (prvfa) at (8.0, 2.4)  {pseudo-RVFA};
+\node[pc] (pfvra) at (8.0, 0.8)  {pseudo-FVRA};
+\node[pc] (pfvfa) at (8.0, -0.8) {pseudo-FVFA};
+\node[pc, fill=violet!14] (pmm) at (8.0, -2.6)
+  {pseudo-MISMATCH\\(real + real, desynced)\\$\Rightarrow$ mismatch $\neq$ fake};
+
+% shared encoder + fusion
+\node[box, fill=teal!12, minimum height=2.2cm] (net) at (11.6, 0.8)
+  {Frozen encoders\\+ fusion\\(cached features)};
+
+% factorized supcon
+\node[loss] (lv) at (15.2, 2.6)  {SupCon($z_v$;\\video-auth)};
+\node[loss] (la) at (15.2, 0.8)  {SupCon($z_a$;\\audio-auth)};
+\node[loss] (lc) at (15.2, -1.0) {SupCon($z_c$;\\sync-state)};
+
+% stages
+\node[st, minimum height=1.2cm] (s0) at (18.6, 0.8)
+  {$\mathcal{L}_{QACP}$\\\textbf{Stage 0}\\pretraining};
+\node[st, minimum height=1.2cm] (s1) at (18.6, -2.0)
+  {\textbf{Stage 1}\\supervised\\multi-task\\fine-tuning};
+
+% arrows
+\draw[arr] (real.east) -- (cs.west);
+\draw[arr] (real.east) -- (sb.west);
+\draw[arr] (real.east) -- (bo.west);
+\draw[arr] (real.east) -- (mm.west);
+\draw[arr] (real.north) |- (prvra.west);
+
+\draw[arr] (cs.east) -- (prvfa.west);
+\draw[arr] (sb.east) -- (pfvra.west);
+\draw[arr] (bo.east) -- (pfvfa.west);
+\draw[arr] (mm.east) -- (pmm.west);
+
+\draw[arr] (prvra.east) -- (net.west |- prvra) -- (net.160);
+\draw[arr] (prvfa.east) -- (net.west |- prvfa);
+\draw[arr] (pfvra.east) -- (net.west |- pfvra);
+\draw[arr] (pfvfa.east) -- (net.west |- pfvfa);
+\draw[arr] (pmm.east)  -- (net.south west);
+
+\draw[arr] (net.east) -- (lv.west);
+\draw[arr] (net.east) -- (la.west);
+\draw[arr] (net.east) -- (lc.west);
+
+\draw[arr] (lv.east) -- (s0.west);
+\draw[arr] (la.east) -- (s0.west);
+\draw[arr] (lc.east) -- (s0.west);
+
+\draw[arr, dashed] (s0.south) -- node[right]{warm start} (s1.north);
+
+\end{tikzpicture}}%
