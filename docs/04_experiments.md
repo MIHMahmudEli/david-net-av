@@ -16,6 +16,11 @@ This is the empirical contract for the paper. Every table/figure planned below m
 - Cross-dataset AUC (train FakeAVCeleb+AVDeepfake1M → test DFDC/KoDF/DF-TIMIT).
 - LOGO AUC (leave-one-generator-out), averaged over held-out generators.
 
+**Missing-modality robustness**
+- Audio-only mode: EER/AUC on ASVspoof 2021 DF and In-the-Wild, compared against AASIST/RawNet2 as a first-class table.
+- Video-only (silent-clip) mode: video AUC with the audio stream masked, vs. video-only baselines.
+- Full-AV accuracy with vs. without modality-dropout training (ablation m).
+
 **Calibration & reliability**
 - Expected Calibration Error (ECE), reliability diagrams, temperature scaling.
 
@@ -68,6 +73,7 @@ Rules: identical splits, identical preprocessing, official weights where availab
 - (j) H_quad direct vs. composed from H_v·H_a.
 - (k) − QACP pretraining (train Stage 1 from scratch).
 - (l) QACP variants: − MISMATCH class; − copy-synthesis (audio); − self-blending (video); factorized SupCon → single joint SupCon.
+- (m) − modality dropout (does missing-modality training cost full-AV accuracy?).
 
 Each ablation reports in-domain AUC + cross-dataset AUC so we can attribute *generalization* gains to specific modules. (k)/(l) are the paper's key evidence: the QACP claim stands or falls on the cross-dataset column.
 

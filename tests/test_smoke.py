@@ -77,6 +77,50 @@ def test_synthetic_quadrants():
     assert not torch.allclose(fvra["video"], frames)
 
 
+def test_missing_modality():
+    """Audio-only and silent-video inputs: z_c zeroed, losses masked, grads flow."""
+    from src.training.losses import LossWeights, total_loss
+
+    model = _model()
+    B = 4
+    video = torch.randn(B, 8, 3, 64, 64)
+    audio = torch.randn(B, 16000)
+
+    # audio-only (video absent for all samples)
+    out = model(video, audio, v_avail=torch.zeros(B), a_avail=torch.ones(B))
+    assert torch.allclose(out["z_c"], torch.zeros_like(out["z_c"]))  # no cross-modal evidence
+    assert out["logit_a"].shape == (B,)
+
+    # mixed batch: sample 0 loses video, sample 1 loses audio, rest full
+    v_av = torch.tensor([0.0, 1.0, 1.0, 1.0])
+    a_av = torch.tensor([1.0, 0.0, 1.0, 1.0])
+    out = model(video, audio, v_avail=v_av, a_avail=a_av)
+    assert torch.allclose(out["z_c"][0], torch.zeros_like(out["z_c"][0]))
+    assert not torch.allclose(out["z_c"][2], torch.zeros_like(out["z_c"][2]))
+
+    batch = {
+        "video": video, "audio": audio,
+        "video_label": torch.tensor([0, 1, 0, 1]),
+        "audio_label": torch.tensor([1, 0, 1, 0]),
+        "quadrant": torch.tensor([1, 2, 1, 2]),
+        "video_seg_mask": torch.zeros(B, 8),
+        "audio_seg_mask": torch.zeros(B, 100),
+    }
+    loss, parts = total_loss(out, batch, LossWeights(), model=model)
+    assert torch.isfinite(loss)
+    loss.backward()
+
+
+def test_modality_dropout_sampler():
+    from src.training.train import sample_modality_masks
+    v_av, a_av = sample_modality_masks(256, 0.5, "cpu")
+    # never both dropped
+    assert ((v_av == 0) & (a_av == 0)).sum() == 0
+    # some drops actually happened at p=0.5
+    assert (v_av == 0).sum() + (a_av == 0).sum() > 0
+    assert sample_modality_masks(8, 0.0, "cpu") == (None, None)
+
+
 def test_feature_cache_roundtrip(tmp_path):
     """extract_features -> CachedFeatureDataset -> identity-encoder model forward."""
     from types import SimpleNamespace

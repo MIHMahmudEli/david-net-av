@@ -80,6 +80,17 @@ consistency subspaces:
   \mathcal{L}_{\text{dis}} = \left|\cos(z_v, z_c)\right| + \left|\cos(z_a, z_c)\right|.
 \end{equation}
 
+\textbf{Missing-modality support.} Real-world inputs are frequently
+single-modality: voice recordings without video, and muted or music-overlaid
+clips without usable speech. An absent stream is replaced by learnable null
+tokens, the consistency embedding $z_c$ is zeroed (no cross-modal evidence
+exists), and the surviving authenticity head decides alone. During training,
+\emph{modality dropout} removes one stream from a sample with probability
+$p{=}0.15$ (never both), masking the dropped modality's losses per sample.
+This enables audio-only detection (evaluated directly against anti-spoofing
+baselines on ASVspoof) and silent-video detection within the same network,
+with graceful degradation instead of undefined behavior.
+
 \textbf{Multi-task heads and objective.} Four heads consume the disentangled
 representations: video authenticity $H_v([z_v; z_c])$, audio authenticity
 $H_a([z_a; z_c])$, quadrant $H_{quad}([z_v; z_a; z_c])$, and per-frame

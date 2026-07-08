@@ -43,37 +43,55 @@ class DavidNetInference:
         duration = 4.0
         return frames.unsqueeze(0), audio.unsqueeze(0), duration
 
-    def predict(self, video_path: str, explain: bool = False) -> dict:
+    def predict(self, video_path: str, explain: bool = False,
+                has_video: bool = True, has_audio: bool = True) -> dict:
+        """Full A+V clip by default; handles silent video (has_audio=False)
+        and audio-only input (has_video=False) via availability masks."""
         torch = self.torch
         t0 = time.time()
         frames, audio, duration = self._preprocess(video_path)
         frames, audio = frames.to(self.device), audio.to(self.device)
+        v_av = torch.ones(1, device=self.device) if has_video else torch.zeros(1, device=self.device)
+        a_av = torch.ones(1, device=self.device) if has_audio else torch.zeros(1, device=self.device)
         with torch.no_grad():
-            out = self.model(frames, audio)
+            out = self.model(frames, audio, v_avail=v_av, a_avail=a_av)
         pv = float(torch.sigmoid(out["logit_v"])[0])
         pa = float(torch.sigmoid(out["logit_a"])[0])
         quad_probs = torch.softmax(out["logit_quad"][0], dim=-1).cpu().tolist()
         agreement = out["agreement"]
         sync_curve = agreement[0].cpu().tolist() if agreement is not None else []
 
+        def _verdict(p, available):
+            if not available:
+                return {"verdict": "unavailable", "confidence": None}
+            return {"verdict": "fake" if p >= 0.5 else "real", "confidence": round(max(p, 1 - p), 4)}
+
         result = {
             "clip_id": Path(video_path).stem,
             "duration_sec": round(duration, 2),
-            "video": {"verdict": "fake" if pv >= 0.5 else "real", "confidence": round(max(pv, 1 - pv), 4)},
-            "audio": {"verdict": "fake" if pa >= 0.5 else "real", "confidence": round(max(pa, 1 - pa), 4)},
-            "quadrant": {
+            "modalities": {"video": has_video, "audio": has_audio},
+            "video": _verdict(pv, has_video),
+            "audio": _verdict(pa, has_audio),
+            # quadrant needs both streams; single-modality inputs get no quadrant
+            "quadrant": ({
                 "label": QUADRANTS[int(max(range(4), key=lambda i: quad_probs[i]))],
                 "probs": {q: round(p, 4) for q, p in zip(QUADRANTS, quad_probs)},
+            } if (has_video and has_audio) else None),
+            "localization": {
+                "video": self._peaks(out["loc_v"], duration) if has_video else [],
+                "audio": self._peaks(out["loc_a"], duration) if has_audio else [],
             },
-            "localization": {"video": self._peaks(out["loc_v"], duration),
-                             "audio": self._peaks(out["loc_a"], duration)},
-            "sync_curve": [round(x, 4) for x in sync_curve],
+            "sync_curve": [round(x, 4) for x in sync_curve] if (has_video and has_audio) else [],
             "model_version": self.version,
             "latency_ms": int((time.time() - t0) * 1000),
         }
         if explain:
             result["explain"] = {"note": "attach Grad-CAM / saliency PNGs (base64) here"}
         return result
+
+    def predict_audio(self, audio_path: str, explain: bool = False) -> dict:
+        """Standalone audio detection (voice notes, calls, extracted tracks)."""
+        return self.predict(audio_path, explain=explain, has_video=False, has_audio=True)
 
     def _peaks(self, loc_logits, duration: float, thr: float = 0.5):
         torch = self.torch

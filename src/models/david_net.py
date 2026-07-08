@@ -106,6 +106,11 @@ class DavidNet(nn.Module):
         )
         self.sync = SyncModule(d) if cfg.use_sync else None
 
+        # Learnable "missing modality" tokens: substituted for an absent stream so the
+        # same network handles audio-only inputs and silent (video-only) clips.
+        self.null_v = nn.Parameter(torch.zeros(1, 1, d))
+        self.null_a = nn.Parameter(torch.zeros(1, 1, d))
+
         c = 2 * d if cfg.use_sync else 0  # consistency embedding width
         # Modality-specific authenticity projections
         self.head_v = nn.Sequential(nn.Linear(d + c, d), nn.GELU(), nn.Linear(d, 1))
@@ -115,9 +120,24 @@ class DavidNet(nn.Module):
         self.loc_v = nn.Linear(d, 1)
         self.loc_a = nn.Linear(d, 1)
 
-    def forward(self, video, audio) -> dict:
+    def forward(self, video, audio, v_avail=None, a_avail=None) -> dict:
+        """v_avail / a_avail: optional (B,) float masks, 1 = modality present.
+
+        Missing streams are replaced by learnable null tokens; the consistency
+        embedding z_c is zeroed for samples lacking either modality (no
+        cross-modal evidence exists for them).
+        """
         v = self.video_encoder(video)   # (B, Lv, d)
         a = self.audio_encoder(audio)   # (B, La, d)
+        B = v.size(0)
+
+        if v_avail is None:
+            v_avail = v.new_ones(B)
+        if a_avail is None:
+            a_avail = a.new_ones(B)
+        v = v * v_avail.view(-1, 1, 1) + self.null_v.expand_as(v) * (1 - v_avail.view(-1, 1, 1))
+        a = a * a_avail.view(-1, 1, 1) + self.null_a.expand_as(a) * (1 - a_avail.view(-1, 1, 1))
+        both = (v_avail * a_avail)      # (B,) 1 only when cross-modal evidence exists
 
         attn_maps = []
         for blk in self.fusion:
@@ -129,6 +149,8 @@ class DavidNet(nn.Module):
         sync_pack = None
         if self.sync is not None:
             z_c, agreement, sync_pack = self.sync(v, a)
+            z_c = z_c * both.unsqueeze(-1)
+            agreement = agreement * both.unsqueeze(-1)
         else:
             z_c = z_v.new_zeros(z_v.size(0), 0)
 
@@ -155,6 +177,7 @@ class DavidNet(nn.Module):
             "z_v": z_v, "z_a": z_a, "z_c": z_c,
             "sync_pack": sync_pack,
             "attn_maps": attn_maps,
+            "v_avail": v_avail, "a_avail": a_avail, "both_avail": both,
         }
 
 

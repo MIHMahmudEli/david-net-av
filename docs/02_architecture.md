@@ -68,6 +68,17 @@ Default: **orthogonality + MI penalty** (cheap, stable).
 
 `H_quad` can be trained directly OR composed from `H_v`, `H_a` outputs; we ablate both. Composition enforces logical consistency (quadrant = outer product of the two binary decisions).
 
+## 7b. Missing-modality support (audio-only & silent-video inputs)
+
+Real-world inputs are often single-modality: voice notes / call recordings (audio-only) and muted or music-overlaid clips (video-only). DAVID-Net handles both natively:
+
+- **Learnable null tokens.** An absent stream is replaced by a learnable `null_v`/`null_a` token sequence, so the fusion transformer always sees two streams.
+- **Consistency gating.** `z_c` and the agreement curve are zeroed for samples lacking either modality — no cross-modal evidence exists, and the heads must decide from the surviving authenticity embedding alone.
+- **Modality dropout (training).** With prob `p` (default 0.15) a training sample loses one stream (never both). The dropped modality's authenticity/localization losses are masked out per-sample; the quadrant loss applies only to full samples; the sync loss only to full real-real samples.
+- **Inference contract.** Single-modality inputs return a verdict for the present stream, `"unavailable"` for the absent one, and no quadrant/sync output (undefined without both streams).
+
+This also serves as an ablation axis (does modality dropout hurt full-AV accuracy?) and enables direct evaluation of the audio head on ASVspoof / In-the-Wild as a first-class result rather than an auxiliary.
+
 ## 8. Total objective
 
 ```

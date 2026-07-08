@@ -31,6 +31,10 @@ feature_cache: null            # dir of cached SSL features (Phase A regime);
                                # produce with: python -m src.data.extract_features
 train_manifest: src/data/splits/train.jsonl
 
+# --- missing-modality robustness ---
+modality_dropout: 0.15         # prob a training sample loses one stream (never both);
+                               # enables audio-only and silent-video inference
+
 # --- optimization ---
 batch_size: 4
 num_workers: 0

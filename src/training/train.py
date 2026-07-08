@@ -45,6 +45,21 @@ def move(batch, device):
     return batch
 
 
+def sample_modality_masks(batch_size: int, p: float, device):
+    """Modality dropout: with prob p a sample loses ONE stream (never both).
+
+    Trains the network to handle audio-only inputs and silent (video-only)
+    clips — see docs/02_architecture.md §7b.
+    """
+    if p <= 0:
+        return None, None
+    drop = torch.rand(batch_size, device=device) < p
+    drop_video = torch.rand(batch_size, device=device) < 0.5
+    v_avail = torch.where(drop & drop_video, 0.0, 1.0)
+    a_avail = torch.where(drop & ~drop_video, 0.0, 1.0)
+    return v_avail, a_avail
+
+
 def train(cfg):
     set_seed(cfg.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -77,7 +92,9 @@ def train(cfg):
             batch = move(batch, device)
             opt.zero_grad(set_to_none=True)
             with torch.amp.autocast("cuda", enabled=(device == "cuda")):
-                out = model(batch["video"], batch["audio"])
+                v_av, a_av = sample_modality_masks(
+                    batch["video"].size(0), cfg.modality_dropout, batch["video"].device)
+                out = model(batch["video"], batch["audio"], v_avail=v_av, a_avail=a_av)
                 loss, parts = total_loss(out, batch, weights, model=model)
             scaler.scale(loss).backward()
             scaler.step(opt)

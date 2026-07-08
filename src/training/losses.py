@@ -17,12 +17,20 @@ class LossWeights:
     disentangle: float = 0.1
 
 
-def focal_bce(logits, targets, gamma: float = 2.0, pos_weight=None):
-    """Focal binary cross-entropy for class-imbalanced authenticity heads."""
+def focal_bce(logits, targets, gamma: float = 2.0, pos_weight=None, mask=None):
+    """Focal binary cross-entropy for class-imbalanced authenticity heads.
+
+    mask: optional (B,) float — samples with mask=0 (e.g. modality dropped)
+    contribute no loss for this head.
+    """
     p = torch.sigmoid(logits)
     ce = F.binary_cross_entropy_with_logits(logits, targets.float(), pos_weight=pos_weight, reduction="none")
     p_t = p * targets + (1 - p) * (1 - targets)
-    return ((1 - p_t) ** gamma * ce).mean()
+    loss = (1 - p_t) ** gamma * ce
+    if mask is None:
+        return loss.mean()
+    denom = mask.sum().clamp(min=1.0)
+    return (loss * mask).sum() / denom
 
 
 def disentangle_loss(z_v, z_a, z_c):
@@ -37,14 +45,21 @@ def disentangle_loss(z_v, z_a, z_c):
     return cos_v + cos_a
 
 
-def localization_loss(loc_logits, seg_targets):
-    """Per-frame BCE against manipulated-interval masks. seg_targets: (B, L) in {0,1}."""
+def localization_loss(loc_logits, seg_targets, mask=None):
+    """Per-frame BCE against manipulated-interval masks. seg_targets: (B, L) in {0,1}.
+
+    mask: optional (B,) float — rows with mask=0 (modality absent) are excluded.
+    """
     if seg_targets is None:
         return loc_logits.new_zeros(())
     L = loc_logits.size(1)
     if seg_targets.size(1) != L:
         seg_targets = F.interpolate(seg_targets.unsqueeze(1).float(), size=L, mode="nearest").squeeze(1)
-    return F.binary_cross_entropy_with_logits(loc_logits, seg_targets.float())
+    loss = F.binary_cross_entropy_with_logits(loc_logits, seg_targets.float(), reduction="none")
+    if mask is None:
+        return loss.mean()
+    denom = (mask.sum() * L).clamp(min=1.0)
+    return (loss * mask.unsqueeze(1)).sum() / denom
 
 
 def supcon_loss(features, labels, temperature: float = 0.1):
@@ -88,18 +103,26 @@ def qacp_loss(out: dict, batch: dict, temperature: float = 0.1):
 def total_loss(out: dict, batch: dict, w: LossWeights, model=None):
     v_t = batch["video_label"].float()
     a_t = batch["audio_label"].float()
-    l_v = focal_bce(out["logit_v"], v_t)
-    l_a = focal_bce(out["logit_a"], a_t)
-    l_quad = F.cross_entropy(out["logit_quad"], batch["quadrant"].long())
-    l_loc = localization_loss(out["loc_v"], batch.get("video_seg_mask")) \
-        + localization_loss(out["loc_a"], batch.get("audio_seg_mask"))
+    # availability masks (modality dropout / genuinely missing streams):
+    # a dropped modality receives no supervised gradient for its head.
+    v_av = out.get("v_avail", v_t.new_ones(v_t.shape))
+    a_av = out.get("a_avail", a_t.new_ones(a_t.shape))
+    both = v_av * a_av
+
+    l_v = focal_bce(out["logit_v"], v_t, mask=v_av)
+    l_a = focal_bce(out["logit_a"], a_t, mask=a_av)
+    # quadrant is only defined when both streams exist
+    l_quad = (F.cross_entropy(out["logit_quad"], batch["quadrant"].long(), reduction="none")
+              * both).sum() / both.sum().clamp(min=1.0)
+    l_loc = localization_loss(out["loc_v"], batch.get("video_seg_mask"), mask=v_av) \
+        + localization_loss(out["loc_a"], batch.get("audio_seg_mask"), mask=a_av)
     l_dis = disentangle_loss(out["z_v"], out["z_a"], out["z_c"])
 
     l_sync = out["logit_v"].new_zeros(())
     if model is not None and getattr(model, "sync", None) is not None and out["sync_pack"] is not None:
         vv, aa = out["sync_pack"]
-        # only enforce sync on genuinely-synced (real-real) samples
-        rr = (v_t == 0) & (a_t == 0)
+        # only enforce sync on genuinely-synced (real-real) samples with both streams
+        rr = (v_t == 0) & (a_t == 0) & (both > 0)
         if rr.any():
             l_sync = model.sync.contrastive_loss(vv[rr], aa[rr])
 

@@ -51,25 +51,50 @@ def version():
     return {"model_version": get_engine().version}
 
 
-@app.post("/predict")
-async def predict(file: UploadFile = File(...), explain: bool = Query(False)):
-    if file.content_type is None or not file.content_type.startswith("video"):
-        raise HTTPException(status_code=415, detail="Upload a video file.")
+async def _save_upload(file: UploadFile, default_suffix: str) -> str:
     data = await file.read()
     if len(data) > MAX_BYTES:
         raise HTTPException(status_code=413, detail=f"File exceeds {MAX_BYTES} bytes.")
-
-    suffix = os.path.splitext(file.filename or "clip.mp4")[1] or ".mp4"
+    suffix = os.path.splitext(file.filename or f"clip{default_suffix}")[1] or default_suffix
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    tmp.write(data)
+    tmp.close()
+    return tmp.name
+
+
+@app.post("/predict")
+async def predict(file: UploadFile = File(...), explain: bool = Query(False)):
+    """A+V clip. Silent videos are handled: audio verdict comes back 'unavailable'."""
+    if file.content_type is None or not file.content_type.startswith("video"):
+        raise HTTPException(status_code=415, detail="Upload a video file.")
+    path = await _save_upload(file, ".mp4")
     try:
-        tmp.write(data)
-        tmp.close()
-        result = get_engine().predict(tmp.path if hasattr(tmp, "path") else tmp.name, explain=explain)
+        # TODO(preprocess): detect a missing/silent audio track via ffprobe and
+        # pass has_audio=False so the model uses its null-audio tokens.
+        result = get_engine().predict(path, explain=explain)
         return JSONResponse(result)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"Inference failed: {e}")
     finally:
         try:
-            os.unlink(tmp.name)
+            os.unlink(path)
+        except OSError:
+            pass
+
+
+@app.post("/predict-audio")
+async def predict_audio(file: UploadFile = File(...), explain: bool = Query(False)):
+    """Standalone audio detection (voice notes, calls, extracted tracks)."""
+    if file.content_type is None or not file.content_type.startswith(("audio", "video")):
+        raise HTTPException(status_code=415, detail="Upload an audio file.")
+    path = await _save_upload(file, ".wav")
+    try:
+        result = get_engine().predict_audio(path, explain=explain)
+        return JSONResponse(result)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"Inference failed: {e}")
+    finally:
+        try:
+            os.unlink(path)
         except OSError:
             pass

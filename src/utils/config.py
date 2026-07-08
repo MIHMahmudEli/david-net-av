@@ -21,6 +21,7 @@ def load_config(path: str) -> SimpleNamespace:
         log_every=10, out_dir="runs", dry_run=False,
         qacp_temperature=0.1, init_from=None,
         feature_cache=None,   # dir of cached SSL features (Phase A); null = raw inputs
+        modality_dropout=0.15,  # prob a training sample loses one stream (never both)
         shard_root=None, train_manifest="src/data/splits/train.jsonl",
         loss_weights=dict(v=1.0, a=1.0, quad=0.5, loc=0.5, sync=0.3, disentangle=0.1),
     )
