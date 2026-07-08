@@ -1,0 +1,104 @@
+% ================================================================ chapter 1
+\chapter{Introduction}
+\label{ch:introduction}
+
+\section{Background}
+Generative artificial intelligence can now synthesize photorealistic talking-head
+video and natural-sounding cloned speech with minimal effort and data. Face-swapping,
+facial reenactment, lip-synchronization models, text-to-speech (TTS), and voice
+conversion (VC) systems are publicly available, and their outputs are increasingly
+difficult for humans to distinguish from genuine recordings. Because the visual and
+acoustic streams of a clip can be manipulated \emph{independently}, a single video
+can fall into one of four authenticity quadrants:
+
+\begin{table}[h]
+\centering
+\caption{The four authenticity quadrants of a multimodal clip.}
+\label{tab:quadrants}
+\begin{tabular}{llll}
+\toprule
+\textbf{Quadrant} & \textbf{Video} & \textbf{Audio} & \textbf{Typical origin} \\
+\midrule
+RVRA & Real & Real & Genuine recording \\
+RVFA & Real & \textbf{Fake} & Voice clone / TTS dubbed over real footage \\
+FVRA & \textbf{Fake} & Real & Face swap / reenactment over real speech \\
+FVFA & \textbf{Fake} & \textbf{Fake} & Fully synthetic avatar (lip-sync + TTS) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Problem Statement}
+The overwhelming majority of published audio-visual deepfake detectors reduce this
+problem to a single binary decision: the clip is either ``real'' or ``fake.'' This
+formulation is forensically inadequate for three reasons. First, it provides no
+\emph{attribution}: a journalist, court, or moderation system needs to know whether
+the face was swapped, the voice was cloned, or both. Second, binary detectors tend
+to shortcut on whichever modality is easier to classify, degrading accuracy on the
+harder stream. Third, modern manipulations are increasingly \emph{partial}: only a
+few seconds of audio or a short facial segment are altered, which a clip-level
+binary label cannot express.
+
+\section{Research Questions}
+This thesis addresses the following research questions:
+\begin{enumerate}[label=\textbf{RQ\arabic*.}]
+  \item Can a single model produce independent, well-calibrated authenticity
+        decisions for the visual and acoustic streams while remaining competitive
+        with specialized unimodal detectors?
+  \item Does explicit modeling of audio-visual synchronization improve detection of
+        manipulations that break cross-modal coherence?
+  \item Does disentangling modality-specific authenticity evidence from cross-modal
+        consistency evidence improve generalization to unseen generators and datasets?
+  \item Can the model temporally localize which segments of each stream were
+        manipulated, and does this objective aid the clip-level decision?
+  \item Is the detector robust to real-world degradations and fair across
+        demographic subgroups?
+  \item Can an embedding space pretrained on synthetically constructed quadrants
+        built from pristine data alone generalize to real forgeries from unseen
+        generators better than supervised training on generator outputs?
+\end{enumerate}
+
+\section{Objectives}
+\begin{itemize}
+  \item To design a unified forensic framework that detects, per modality, whether
+        the video and the audio of a clip are real or AI-generated.
+  \item To propose \textbf{DAVID-Net}, a disentangled cross-modal transformer with
+        independent per-modality decision heads, a synchronization-consistency
+        module, and per-modality temporal localization.
+  \item To propose \textbf{Quadrant-Aware Contrastive Pretraining (QACP)}, a
+        generator-free pretraining strategy for cross-generator generalization.
+  \item To evaluate the framework rigorously across multiple benchmarks with
+        cross-dataset, robustness, calibration, and fairness protocols.
+  \item To deploy the detector as a public web application (FastAPI inference API
+        on Hugging Face and a Next.js user interface).
+\end{itemize}
+
+\section{Contributions}
+The main contributions of this thesis are:
+\begin{enumerate}
+  \item \textbf{QACP}: a self-supervised pretraining stage that constructs all four
+        authenticity quadrants from pristine data only and structures three
+        embedding spaces with a factorized supervised-contrastive objective,
+        including an explicit \emph{real-but-mismatched} class that teaches the
+        model that desynchronization is not forgery.
+  \item A reformulation of audio-visual deepfake detection as a multi-task,
+        per-modality attribution and localization problem.
+  \item \textbf{DAVID-Net}, a disentangled dual-branch cross-modal transformer
+        architecture implementing this reformulation.
+  \item A generalization-first evaluation protocol with leave-one-generator-out and
+        cross-dataset testing as first-class results.
+  \item A complete, reproducible, publicly deployed detection system.
+\end{enumerate}
+
+\section{Scope and Limitations}
+This work targets talking-head style video with a single primary subject and
+speech audio, the dominant setting of current deepfake threats and benchmarks.
+Detection outputs are probabilistic assessments, not legal proof of authenticity.
+\todo{Refine scope after experiments.}
+
+\section{Thesis Organization}
+Chapter~\ref{ch:literature} reviews related work in unimodal and multimodal
+deepfake detection. Chapter~\ref{ch:methodology} presents the proposed framework,
+including DAVID-Net and QACP. Chapter~\ref{ch:setup} describes the datasets,
+preprocessing pipeline, implementation, and evaluation protocol.
+Chapter~\ref{ch:results} reports experimental results and ablation studies.
+Chapter~\ref{ch:conclusion} concludes and outlines future work.

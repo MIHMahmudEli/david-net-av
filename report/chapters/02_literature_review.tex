@@ -1,0 +1,88 @@
+% ================================================================ chapter 2
+\chapter{Literature Review}
+\label{ch:literature}
+
+This chapter surveys the five research threads most relevant to multimodal
+synthetic-media forensics and identifies the gap this thesis addresses.
+
+\section{Unimodal Video Deepfake Detection}
+Early detectors treated deepfake detection as frame-level image classification.
+XceptionNet trained on FaceForensics++~\cite{rossler2019faceforensics} became the
+canonical baseline, followed by EfficientNet ensembles that won the Deepfake
+Detection Challenge~\cite{dolhansky2020dfdc}. Frequency-domain methods exploit
+GAN upsampling fingerprints, while temporal methods such as
+LipForensics~\cite{haliassos2021lipforensics} and
+RealForensics~\cite{haliassos2022realforensics} model mouth-motion dynamics for
+stronger cross-manipulation generalization. \emph{Limitation:} these methods are
+blind to audio manipulation and degrade sharply under compression and dataset
+shift.
+
+\section{Unimodal Audio Spoofing Detection}
+The anti-spoofing community, organized around the ASVspoof
+challenges~\cite{wang2020asvspoof}, progressed from hand-crafted spectral features
+to end-to-end models such as RawNet2~\cite{tak2021rawnet2} and the spectro-temporal
+graph attention network AASIST~\cite{jung2022aasist}. Self-supervised speech
+front-ends such as WavLM~\cite{chen2022wavlm} further improved robustness to unseen
+TTS and VC systems. \emph{Limitation:} audio-only methods cannot detect facial
+manipulation.
+
+\section{Audio-Visual Binary Detection}
+Multimodal detectors fuse both streams but almost universally emit one binary
+label. The Modality Dissonance Score~\cite{chugh2020mds} measures audio-visual
+dissimilarity; Mittal et al.~\cite{mittal2020emotions} compare cross-modal
+emotional cues; AVFakeNet~\cite{ilyas2023avfakenet} and
+AVoiD-DF~\cite{yang2023avoiddf} employ transformer fusion. \emph{Limitation:} no
+per-modality attribution; a real-video/fake-audio clip and a fake-video/real-audio
+clip receive the same label.
+
+\section{Audio-Visual Consistency and Synchronization}
+SyncNet~\cite{chung2016syncnet} introduced contrastive audio-visual
+synchronization, later exploited for anomaly-based deepfake detection
+(AVAD~\cite{feng2023avanomaly}). \emph{Limitation:} consistency methods detect
+\emph{mismatch} but cannot say which stream is fake, and they fail on
+fully-synthetic clips whose fake streams are mutually consistent (e.g., a
+lip-synced avatar with cloned voice).
+
+\section{Temporal Localization of Partial Forgeries}
+LAV-DF~\cite{cai2022lavdf} introduced content-driven partial forgeries with
+boundary annotations and the BA-TFD detector; AV-Deepfake1M~\cite{cai2023avdeepfake1m}
+scaled this to over one million clips. \emph{Limitation:} localization is usually
+joint over modalities, per-modality attribution is limited, and cross-dataset
+generalization is under-reported.
+
+\section{Proxy-Forgery and Generator-Free Training}
+Self-Blended Images~\cite{shiohara2022sbi} and Face X-ray~\cite{li2020facexray}
+showed that \emph{synthesizing} blending artifacts from pristine images
+generalizes better than training on generator outputs; the anti-spoofing
+literature found the same for vocoder copy-synthesis
+augmentation~\cite{wang2023vocoded}. Zhou and Lim~\cite{zhou2021joint} explored
+joint audio-visual labels but trained on generator outputs without a pretraining
+stage. \emph{Gap:} no prior work unifies the two unimodal proxy-forgery techniques
+into a quadrant-structured audio-visual pretraining objective, nor introduces a
+real-but-mismatched class as an explicit disentanglement signal.
+
+\section{Summary of the Research Gap}
+Table~\ref{tab:gap} summarizes the identified gap. No widely adopted method
+simultaneously provides (a) independent per-modality authenticity, (b) cross-modal
+consistency reasoning, (c) temporal localization, and (d) validated
+cross-generator generalization in a single reproducible, deployable system. This
+thesis targets exactly this intersection.
+
+\begin{table}[h]
+\centering
+\caption{Capability comparison of prior work and the proposed framework.}
+\label{tab:gap}
+\small
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Approach} & \textbf{Per-modality} & \textbf{Consistency} & \textbf{Localization} & \textbf{Cross-gen.\ eval} \\
+\midrule
+Unimodal video       & --      & --      & partial & partial \\
+Unimodal audio       & --      & --      & partial & partial \\
+AV binary fusion     & --      & partial & --      & partial \\
+Sync/anomaly based   & --      & \checkmark & partial & partial \\
+Localization (BA-TFD) & partial & partial & \checkmark & -- \\
+\textbf{DAVID-Net + QACP (ours)} & \checkmark & \checkmark & \checkmark & \checkmark \\
+\bottomrule
+\end{tabular}
+\end{table}

@@ -1,0 +1,42 @@
+% ================================================================ appendix
+\chapter{Supplementary Material}
+\label{app:supplementary}
+
+\section{Repository and Reproducibility}
+The complete source code, configuration files, and dataset split manifests are
+available at: \url{https://github.com/MIHMahmudEli/david-net-av}.
+Every reported number corresponds to a committed configuration file; random seeds
+are fixed and environments pinned.
+
+\section{Unified Manifest Schema}
+Every clip in every dataset is converted to the following record:
+\begin{verbatim}
+{
+  "clip_id": "str",
+  "video_label": 0,              // 0 real, 1 fake
+  "audio_label": 1,
+  "quadrant": "RVFA",
+  "video_segments": [[s, e]],    // manipulated intervals (sec)
+  "audio_segments": [[s, e]],
+  "generator": "wav2lip",
+  "dataset": "fakeavceleb",
+  "meta": {"gender": "...", "language": "..."}
+}
+\end{verbatim}
+
+\section{API Response Format}
+The deployed detection service returns:
+\begin{verbatim}
+{
+  "video":    {"verdict": "fake", "confidence": 0.94},
+  "audio":    {"verdict": "real", "confidence": 0.88},
+  "quadrant": {"label": "FVRA", "probs": {...}},
+  "localization": {"video": [{"start": 1.2, "end": 3.6,
+                              "score": 0.91}], "audio": []},
+  "sync_curve": [...],
+  "model_version": "david-net-lite-1.0"
+}
+\end{verbatim}
+
+\section{Additional Results}
+\todo{Extended tables, per-generator breakdowns, additional qualitative examples.}

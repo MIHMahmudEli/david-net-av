@@ -25,6 +25,19 @@ wandb/
 *.log
 eval_report*.json
 
+# LaTeX build artifacts (keep main.pdf tracked for convenience)
+report/*.aux
+report/*.log
+report/*.out
+report/*.toc
+report/*.lof
+report/*.lot
+report/*.bbl
+report/*.blg
+report/*.fls
+report/*.fdb_latexmk
+report/*.synctex.gz
+
 # Local tooling
 .pytest_cache/
 .claude/

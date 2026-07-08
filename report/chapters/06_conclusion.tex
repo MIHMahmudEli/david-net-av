@@ -1,0 +1,36 @@
+% ================================================================ chapter 6
+\chapter{Conclusion and Future Work}
+\label{ch:conclusion}
+
+\section{Conclusion}
+This thesis presented a unified forensic framework for the detection of
+multimodal synthetic media that moves beyond binary classification to
+fine-grained, per-modality attribution: determining independently whether the
+video and the voice of a clip are real or AI-generated, assigning the clip to one
+of four authenticity quadrants, and localizing manipulated segments in time. The
+framework combines DAVID-Net, a disentangled cross-modal transformer, with
+Quadrant-Aware Contrastive Pretraining, a generator-free pretraining strategy
+that constructs all four quadrants from pristine data alone.
+\todo{Summarize the headline empirical findings once available.} The complete
+system is released as reproducible open-source code with a deployed public
+detection service.
+
+\section{Limitations}
+\begin{itemize}
+  \item The framework targets single-subject talking-head content; multi-person
+        scenes and non-speech audio are out of scope.
+  \item Detection is probabilistic; outputs are decision support, not proof.
+  \item \todo{Add empirical limitations discovered during experiments.}
+\end{itemize}
+
+\section{Future Work}
+\begin{itemize}
+  \item Extension to fully generated (text-to-video) content without a real
+        source subject.
+  \item Continual adaptation to newly emerging generators using the QACP
+        construction as a self-refreshing training signal.
+  \item Multi-person scenes, overlapping speech, and non-frontal faces.
+  \item Provenance integration (e.g., C2PA content credentials) alongside
+        statistical detection.
+  \item On-device and streaming (real-time) variants of the detector.
+\end{itemize}

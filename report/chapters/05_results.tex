@@ -1,0 +1,84 @@
+% ================================================================ chapter 5
+\chapter{Results and Discussion}
+\label{ch:results}
+
+\todo{This chapter is populated as experiments complete. The table skeletons below
+define the paper's empirical contract.}
+
+\section{In-Domain Detection and Attribution}
+\begin{table}[h]
+\centering
+\caption{Per-modality and quadrant results on FakeAVCeleb (subject-disjoint test split). \todo{fill}}
+\label{tab:indomain}
+\small
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Method} & \textbf{Video AUC} & \textbf{Audio AUC} & \textbf{Quadrant Acc.} & \textbf{Macro-F1} & \textbf{EER} \\
+\midrule
+Xception (video-only)     & -- & --   & -- & -- & -- \\
+AASIST (audio-only)       & --   & -- & -- & -- & -- \\
+MDS                       & -- & -- & -- & -- & -- \\
+AVoiD-DF                  & -- & -- & -- & -- & -- \\
+\textbf{DAVID-Net (ours)} & -- & -- & -- & -- & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Cross-Dataset Generalization}
+\begin{table}[h]
+\centering
+\caption{Cross-dataset AUC: train on FakeAVCeleb + AV-Deepfake1M, test unseen. \todo{fill}}
+\label{tab:crossdataset}
+\small
+\begin{tabular}{lccc}
+\toprule
+\textbf{Method} & \textbf{DFDC} & \textbf{KoDF} & \textbf{DF-TIMIT} \\
+\midrule
+Best unimodal baseline    & -- & -- & -- \\
+Best multimodal baseline  & -- & -- & -- \\
+DAVID-Net w/o QACP        & -- & -- & -- \\
+\textbf{DAVID-Net + QACP (ours)} & -- & -- & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Temporal Localization}
+\todo{AP@IoU table on AV-Deepfake1M and LAV-DF, per modality, vs.\ BA-TFD+.}
+
+\section{Ablation Study}
+\begin{table}[h]
+\centering
+\caption{Ablations. Each row reports in-domain and cross-dataset AUC. \todo{fill}}
+\label{tab:ablation}
+\small
+\begin{tabular}{lcc}
+\toprule
+\textbf{Configuration} & \textbf{In-domain AUC} & \textbf{Cross-dataset AUC} \\
+\midrule
+Full DAVID-Net + QACP            & -- & -- \\
+$-$ QACP pretraining             & -- & -- \\
+$-$ MISMATCH pseudo-class        & -- & -- \\
+$-$ synchronization module       & -- & -- \\
+$-$ disentanglement loss         & -- & -- \\
+early fusion                     & -- & -- \\
+late fusion                      & -- & -- \\
+single-task (binary only)        & -- & -- \\
+$-$ localization head            & -- & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Calibration, Robustness, and Fairness}
+\todo{Reliability diagrams and ECE; AUC vs.\ CRF and SNR curves; subgroup gaps.}
+
+\section{Qualitative Analysis}
+\todo{Grad-CAM heatmaps, audio saliency, synchronization curves, localization
+timelines; include failure cases.}
+
+\section{Efficiency and Deployment}
+\todo{Parameters, FLOPs, latency on DGX Spark (BF16) and the deployed Lite model
+(FP8/FP4 TensorRT); end-to-end response time of the public web service.}
+
+\section{Discussion}
+\todo{Interpret results against RQ1--RQ6; discuss which hypotheses held; honest
+treatment of negative results.}
