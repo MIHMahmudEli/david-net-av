@@ -1,8 +1,14 @@
 % =====================================================================
-%  Thesis Report — American International University-Bangladesh (AIUB)
-%  A Unified Forensic Framework for the Detection of Multimodal
-%  Synthetic Media: Identifying Artifacts in Deepfakes and
-%  Generative AI Content
+%  AIUB Thesis Report — follows the official OBE 2.1 template structure
+%  (Thesis Report Template [OBE_2.1].docx) exactly:
+%  Title page > Declaration > Approval > Acknowledgement > Author
+%  Contributions > Project-Thesis Planning > ToC > LoF > LoT > List of
+%  Abbreviations > Abstract > Keywords > CH1 INTRODUCTION > CH2 RESEARCH
+%  METHODOLOGY > CH3 RESULTS AND ANALYSIS > Conclusion > References >
+%  Appendix.
+%
+%  Format rules from the template: Times New Roman, 12pt, justified,
+%  1.5 line spacing, max 50-60 pages, no first/second person in body text.
 %
 %  Build:  pdflatex main && bibtex main && pdflatex main && pdflatex main
 % =====================================================================
@@ -10,6 +16,7 @@
 
 % ---------------------------- packages -------------------------------
 \usepackage[left=1.25in, right=1in, top=1in, bottom=1in]{geometry}
+\usepackage{mathptmx}           % Times New Roman text + math
 \usepackage{setspace}
 \usepackage{graphicx}
 \usepackage{booktabs}
@@ -19,63 +26,77 @@
 \usepackage{enumitem}
 \usepackage[hidelinks]{hyperref}
 \usepackage{xcolor}
-\usepackage{tocbibind}          % put LoF/LoT/Bibliography in the ToC
+\usepackage{tocbibind}          % LoF/LoT/Bibliography in the ToC
 
 \graphicspath{{figures/}}
-\onehalfspacing
-\setlength{\parskip}{4pt}
+\onehalfspacing                 % 1.5 line spacing (template rule)
+\setlength{\parskip}{6pt}       % one-line gap between paragraphs (template rule)
 
 % TODO marker for content to fill in later
 \newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
 
+% ------------------- chapter heading: "CHAPTER n" --------------------
+% Matches the template's "CHAPTER 1 / INTRODUCTION" two-line style.
+\makeatletter
+\def\@makechapterhead#1{%
+  {\parindent \z@ \centering \normalfont
+   \Large\bfseries CHAPTER \thechapter\par\nobreak
+   \vskip 6\p@
+   \Large\bfseries \MakeUppercase{#1}\par\nobreak
+   \vskip 24\p@}}
+\def\@makeschapterhead#1{%
+  {\parindent \z@ \centering \normalfont
+   \Large\bfseries #1\par\nobreak
+   \vskip 24\p@}}
+\makeatother
+
 % ---------------------------- metadata -------------------------------
 \newcommand{\thesistitle}{A Unified Forensic Framework for the Detection of Multimodal Synthetic Media: Identifying Artifacts in Deepfakes and Generative AI Content}
-\newcommand{\university}{American International University--Bangladesh}
+\newcommand{\university}{American International University--Bangladesh (AIUB)}
 \newcommand{\department}{Department of Computer Science}
 \newcommand{\faculty}{Faculty of Science and Technology}
-\newcommand{\degree}{Bachelor of Science in Computer Science \& Engineering}
-\newcommand{\semester}{Summer 2025--2026}
+\newcommand{\semester}{Summer 2025--2026 Semester}
 \newcommand{\supervisorname}{Mohammad Mahmudul Hasan}
-\newcommand{\supervisordept}{Department of Computer Science}
-\newcommand{\supervisoremail}{m.hasan@aiub.edu}
 
 \begin{document}
 
 % =====================================================================
-%  FRONT MATTER
+%  FRONT MATTER  (order mandated by the OBE 2.1 template)
 % =====================================================================
 \pagenumbering{roman}
 
 \input{frontmatter/titlepage}
 \input{frontmatter/declaration}
 \input{frontmatter/approval}
-\input{frontmatter/acknowledgment}
-\input{frontmatter/abstract}
+\input{frontmatter/acknowledgement}
+\input{frontmatter/author_contributions}
+\input{frontmatter/planning}
 
 \tableofcontents
+\clearpage
 \listoffigures
+\clearpage
 \listoftables
 \clearpage
+\input{frontmatter/abbreviations}
+\input{frontmatter/abstract}
 
 % =====================================================================
-%  MAIN MATTER
+%  MAIN MATTER — three chapters, per the OBE 2.1 template
 % =====================================================================
 \pagenumbering{arabic}
 
 \input{chapters/01_introduction}
-\input{chapters/02_literature_review}
-\input{chapters/03_methodology}
-\input{chapters/04_experimental_setup}
-\input{chapters/05_results}
-\input{chapters/06_conclusion}
+\input{chapters/02_methodology}
+\input{chapters/03_results}
+\input{chapters/04_conclusion}
 
 % =====================================================================
 %  BACK MATTER
 % =====================================================================
-\bibliographystyle{ieeetr}
+\bibliographystyle{ieeetr}      % template allows "APA or any other recognized standard"
 \bibliography{references}
 
-\appendix
 \input{chapters/appendix}
 
 \end{document}

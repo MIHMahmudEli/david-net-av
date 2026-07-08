@@ -1,14 +1,15 @@
 % ================================================================ appendix
-\chapter{Supplementary Material}
-\label{app:supplementary}
+% Optional back-matter sections, per the OBE 2.1 template.
+\chapter*{Appendix}
+\addcontentsline{toc}{chapter}{Appendix}
 
-\section{Repository and Reproducibility}
+\section*{A. Repository and Reproducibility}
 The complete source code, configuration files, and dataset split manifests are
-available at: \url{https://github.com/MIHMahmudEli/david-net-av}.
-Every reported number corresponds to a committed configuration file; random seeds
-are fixed and environments pinned.
+available at: \url{https://github.com/MIHMahmudEli/david-net-av}. Every
+reported number corresponds to a committed configuration file; random seeds are
+fixed and environments pinned.
 
-\section{Unified Manifest Schema}
+\section*{B. Unified Manifest Schema}
 Every clip in every dataset is converted to the following record:
 \begin{verbatim}
 {
@@ -24,7 +25,7 @@ Every clip in every dataset is converted to the following record:
 }
 \end{verbatim}
 
-\section{API Response Format}
+\section*{C. API Response Format}
 The deployed detection service returns:
 \begin{verbatim}
 {
@@ -38,5 +39,7 @@ The deployed detection service returns:
 }
 \end{verbatim}
 
-\section{Additional Results}
-\todo{Extended tables, per-generator breakdowns, additional qualitative examples.}
+\chapter*{Funding Agency}
+\addcontentsline{toc}{chapter}{Funding Agency}
+
+The authors have received no funding for this research.

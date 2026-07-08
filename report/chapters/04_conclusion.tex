@@ -1,0 +1,35 @@
+% ================================================================ conclusion
+% Unnumbered chapter, per the OBE 2.1 template ToC.
+\chapter*{Conclusion}
+\addcontentsline{toc}{chapter}{Conclusion}
+
+This thesis addressed the inadequacy of binary deepfake detection in a media
+landscape where the visual and acoustic streams of a clip can be manipulated
+independently. The stated objective---to detect, per modality, whether the
+video and the voice of a clip are real or AI-generated, to attribute the clip
+to one of four authenticity quadrants, and to localize manipulated segments in
+time---was pursued through a designed artifact combining DAVID-Net, a
+disentangled cross-modal transformer, with Quadrant-Aware Contrastive
+Pretraining, a generator-free pretraining strategy that constructs all four
+quadrants from pristine data alone.
+
+The data collection and analysis process relied on established benchmark
+corpora (FakeAVCeleb, AV-Deepfake1M, LAV-DF) with cross-dataset validation on
+unseen corpora (DFDC, KoDF), unified under a single reproducible manifest
+schema with subject-disjoint and leave-one-generator-out splits.
+\todo{Summarize the principal findings and their significance in one paragraph
+once experiments are complete.} The complete system is released as open-source
+software and deployed as a public web service.
+
+\textbf{Limitations.} The framework targets single-subject talking-head
+content; multi-person scenes, overlapping speech, and non-speech audio are out
+of scope. Detection outputs are probabilistic decision support, not proof of
+authenticity. \todo{Add empirical limitations discovered during
+experimentation.}
+
+\textbf{Future work.} Future researchers can extend this study toward fully
+generated text-to-video content without a real source subject; continual
+adaptation to emerging generators using the QACP construction as a
+self-refreshing training signal; multi-person and non-frontal scenarios;
+integration with provenance standards such as C2PA content credentials; and
+on-device, real-time variants of the detector.

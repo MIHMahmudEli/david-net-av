@@ -1,0 +1,261 @@
+% ================================================================ CHAPTER 2
+% OBE 2.1 structure: 2.1 Conceptual Framework, 2.2 Data Collection,
+% 2.3 Professional Code of Ethical Issues, 2.4 Economic Decision.
+\chapter{Research Methodology}
+\label{ch:methodology}
+
+This chapter justifies and explains the methodological approach of the study.
+The research follows the Design Science Research Methodology (DSRM): the
+problem is identified from the literature (Chapter~\ref{ch:introduction}), an
+artifact (the detection framework) is designed and developed, and the artifact
+is demonstrated and evaluated against explicit research questions using
+established benchmarks. DSRM is appropriate because the contribution of this
+thesis is a designed computational artifact whose utility must be demonstrated
+empirically, rather than a purely observational study.
+
+\section{Conceptual Framework}
+\label{sec:framework}
+
+The life cycle of the project comprises five phases: (1) data acquisition and
+preprocessing, (2) generator-free pretraining (QACP), (3) supervised multi-task
+training of DAVID-Net, (4) evaluation against baselines and ablations, and
+(5) deployment as a public web service. The proposed framework is trained in
+two stages: \textbf{Stage~0}, Quadrant-Aware Contrastive Pretraining on
+synthetically constructed quadrants; and \textbf{Stage~1}, supervised
+multi-task fine-tuning of the full DAVID-Net architecture.
+
+\subsection{Problem Formulation}
+Let a clip $x = (x_v, x_a)$ consist of a visual stream $x_v$ and an acoustic
+stream $x_a$. The framework predicts:
+\begin{align}
+  \hat{y}_v &= P(\text{video fake} \mid x) \in [0,1], \\
+  \hat{y}_a &= P(\text{audio fake} \mid x) \in [0,1], \\
+  \hat{q}   &\in \{\text{RVRA}, \text{RVFA}, \text{FVRA}, \text{FVFA}\}, \\
+  \hat{m}_v(t),\ \hat{m}_a(t) &\in [0,1] \quad \text{(per-frame manipulation probability)}.
+\end{align}
+
+\subsection{DAVID-Net Architecture}
+\label{sec:davidnet}
+
+% \begin{figure}[t]
+%   \centering
+%   \includegraphics[width=\textwidth]{architecture_overview}
+%   \caption{Overview of the proposed DAVID-Net architecture.}
+%   \label{fig:architecture}
+% \end{figure}
+\todo{Insert architecture diagram (Figure) and refer to it here.}
+
+DAVID-Net is built on the observation that ``is stream $X$ internally
+authentic?'' and ``do the two streams agree with each other?'' are different
+questions. Fusing them prematurely allows shortcut learning (e.g., labeling
+every desynchronized clip fake). The architecture therefore keeps
+\emph{modality-specific authenticity} evidence disentangled from
+\emph{cross-modal consistency} evidence, combining them only at the decision
+heads. This design lets the per-modality heads fire independently---making all
+four quadrants reachable, including FVFA clips whose two fake streams are
+mutually consistent.
+
+\textbf{Encoders.} The video branch extracts aligned face and mouth crops and
+encodes them with a self-supervised VideoMAE backbone into a spatio-temporal
+token sequence $V \in \mathbb{R}^{L_v \times d}$. The audio branch encodes the
+raw 16\,kHz waveform with WavLM~\cite{chen2022wavlm} into
+$A \in \mathbb{R}^{L_a \times d}$. Encoders are largely frozen; only adapters
+and the fusion layers are trained heavily.
+
+\textbf{Synchronization--consistency module.} Short overlapping windows of $V$
+and $A$ are projected into a shared space and trained with an InfoNCE
+contrastive objective in which temporally aligned real windows are positives.
+The module outputs a per-window agreement score $s_t$ and a pooled consistency
+embedding $z_c$.
+
+\textbf{Disentangled cross-modal fusion.} A cross-modal transformer produces
+pooled authenticity embeddings $z_v, z_a$ and the consistency embedding $z_c$.
+A disentanglement penalty discourages leakage between the authenticity and
+consistency subspaces:
+\begin{equation}
+  \mathcal{L}_{\text{dis}} = \left|\cos(z_v, z_c)\right| + \left|\cos(z_a, z_c)\right|.
+\end{equation}
+
+\textbf{Multi-task heads and objective.} Four heads consume the disentangled
+representations: video authenticity $H_v([z_v; z_c])$, audio authenticity
+$H_a([z_a; z_c])$, quadrant $H_{quad}([z_v; z_a; z_c])$, and per-frame
+localization $H_{loc}$. The total Stage-1 objective is
+\begin{equation}
+  \mathcal{L} = \lambda_1 \mathcal{L}_v + \lambda_2 \mathcal{L}_a
+  + \lambda_3 \mathcal{L}_{quad} + \lambda_4 \mathcal{L}_{loc}
+  + \lambda_5 \mathcal{L}_{sync} + \lambda_6 \mathcal{L}_{dis},
+\end{equation}
+where $\mathcal{L}_v, \mathcal{L}_a$ are focal binary cross-entropy losses,
+$\mathcal{L}_{quad}$ is cross-entropy, $\mathcal{L}_{loc}$ is frame-level
+binary cross-entropy against manipulated-interval masks, and
+$\mathcal{L}_{sync}$ is the contrastive synchronization loss applied to genuine
+(RVRA) samples.
+
+\subsection{Quadrant-Aware Contrastive Pretraining (QACP)}
+\label{sec:qacp}
+
+Detectors trained on generator outputs inherit those generators' fingerprints
+and fail on unseen synthesis methods. QACP instead pretrains the embedding
+space on forgeries \emph{constructed from pristine data alone}, so the space
+encodes what manipulation does to a stream rather than what a particular
+generator looks like. Starting from verified-real (RVRA) clips only, five
+pseudo-classes are manufactured (Table~\ref{tab:qacp-classes}).
+
+\begin{table}[h]
+\centering
+\caption{QACP pseudo-classes constructed from pristine clips.}
+\label{tab:qacp-classes}
+\small
+\begin{tabular}{lll}
+\toprule
+\textbf{Pseudo-class} & \textbf{Construction} & \textbf{Teaches} \\
+\midrule
+pseudo-RVRA & untouched real clip & anchor \\
+pseudo-RVFA & vocoder copy-synthesis of the audio & audio authenticity cues \\
+pseudo-FVRA & self-blended face video~\cite{shiohara2022sbi} & video authenticity cues \\
+pseudo-FVFA & both transforms & consistent double-fake \\
+pseudo-MISMATCH & real audio swapped from another clip & mismatch $\neq$ fake \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The MISMATCH class is the disentanglement forcing function: both streams remain
+genuinely real while synchronization is broken, so the authenticity heads must
+answer ``real'' while the consistency embedding flags disagreement. Three
+supervised-contrastive (SupCon~\cite{khosla2020supcon}) losses are applied to
+the three embedding spaces, each with a \emph{different} label partition of the
+same batch:
+\begin{equation}
+\mathcal{L}_{\text{QACP}} =
+  \mathcal{L}_{\text{SupCon}}(z_v;\, \text{video-auth}) +
+  \mathcal{L}_{\text{SupCon}}(z_a;\, \text{audio-auth}) +
+  \mathcal{L}_{\text{SupCon}}(z_c;\, \text{sync-state}).
+\end{equation}
+Because each space is supervised to be invariant to the other factors, the
+factorization itself performs disentanglement.
+
+\subsection{Deployment Architecture}
+The complete framework is deployed as a two-tier system: a FastAPI inference
+service hosting a lightweight DAVID-Net variant on Hugging Face Spaces, and a
+Next.js web interface that presents per-modality verdicts, quadrant
+attribution, temporal manipulation timelines, and the synchronization curve to
+end users.
+
+\section{Data Collection}
+\label{sec:data}
+
+\subsection{Selection of the Data Collection Method}
+This research uses \emph{established benchmark datasets} rather than an
+interview, survey, or systematic literature review as its primary data source.
+This choice follows directly from the research questions: RQ1--RQ6 concern the
+measurable behavior of a computational artifact on labeled audio-visual media,
+which only curated, ground-truth-annotated corpora can answer. Interviews or
+surveys measure human opinion and cannot supply the frame-level manipulation
+labels required for training and for the localization task; benchmark corpora
+additionally allow direct, reproducible comparison against prior work under
+identical splits, which is the accepted evaluation standard in this field.
+
+\subsection{Description of the Datasets}
+Table~\ref{tab:datasets} lists the datasets used.
+FakeAVCeleb~\cite{khalid2021fakeavceleb} provides native four-quadrant labels
+and is the primary training set. AV-Deepfake1M~\cite{cai2023avdeepfake1m} and
+LAV-DF~\cite{cai2022lavdf} drive the temporal-localization task.
+DFDC~\cite{dolhansky2020dfdc} and KoDF are reserved exclusively for
+cross-dataset evaluation. ASVspoof~\cite{wang2020asvspoof} strengthens the
+audio branch. All datasets are obtained under their respective end-user license
+agreements.
+
+\begin{table}[h]
+\centering
+\caption{Datasets used in this study.}
+\label{tab:datasets}
+\small
+\begin{tabular}{llll}
+\toprule
+\textbf{Dataset} & \textbf{Modality} & \textbf{Labels} & \textbf{Role} \\
+\midrule
+FakeAVCeleb   & A+V & 4-quadrant           & train + in-domain test \\
+AV-Deepfake1M & A+V & clip + localization   & train + localization \\
+LAV-DF        & A+V & localized forgeries   & localization \\
+DFDC          & A+V & binary                & cross-dataset test only \\
+KoDF          & A+V & binary                & cross-dataset test only \\
+ASVspoof 2019/21 & A & bona fide / spoof    & audio-branch auxiliary \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Preprocessing and Analysis Pipeline}
+Video is decoded at 25\,fps; faces are detected, tracked, and aligned,
+producing a $224\times224$ face crop and a $96\times96$ mouth crop. Audio is
+resampled to 16\,kHz mono and loudness-normalized. All datasets are converted
+to a unified manifest schema with per-modality labels, quadrant, manipulated
+intervals, generator identity, and demographic metadata, making the analysis
+reproducible from committed configuration files. Splits are subject-disjoint;
+leave-one-generator-out (LOGO) splits hold out one manipulation method
+entirely. \todo{Add pipeline diagram figure.}
+
+Experiments are implemented in PyTorch and executed on an NVIDIA DGX Spark
+system (GB10 Grace--Blackwell, 128\,GB unified memory) using BF16 precision and
+a cached-feature training regime. Evaluation uses per-modality AUC, EER,
+macro-F1, four-class quadrant accuracy, localization AP@IoU, expected
+calibration error, robustness curves under compression and noise, and fairness
+gaps across demographic subgroups; statistical rigor is ensured through
+three-seed runs, bootstrap confidence intervals, and DeLong tests. Baselines
+include Xception~\cite{rossler2019faceforensics},
+LipForensics~\cite{haliassos2021lipforensics}, RawNet2~\cite{tak2021rawnet2},
+AASIST~\cite{jung2022aasist}, MDS~\cite{chugh2020mds}, and
+AVoiD-DF~\cite{yang2023avoiddf}, evaluated under identical splits.
+
+\section{Professional Code of Ethical Issues}
+\label{sec:ethics}
+
+The ethical dimension of this research parses into four sub-problems, each with
+a concrete mitigation.
+
+\textbf{Consent and licensing of biometric data.} The datasets contain faces
+and voices of real individuals. All corpora are used strictly under their
+end-user license agreements, no raw media is redistributed, and only manifests,
+split definitions, and model weights are released.
+
+\textbf{Sampling bias and fairness.} Benchmark corpora over-represent certain
+demographics and languages, which can bias detection accuracy. The study
+audits performance gaps across gender, apparent skin tone, and language
+subgroups, applies balanced sampling during training, and reports the residual
+gaps transparently rather than concealing them.
+
+\textbf{Transparency and research integrity.} All reported numbers correspond
+to committed configuration files with fixed random seeds; negative and partial
+results of ablations are reported alongside positive ones, guarding against
+falsification, fabrication, and selective reporting. There is no conflict of
+interest and no external funding influence on the findings.
+
+\textbf{Dual-use and responsible deployment.} The system is strictly
+defensive: no generation capability is included or released. The public
+interface presents verdicts as calibrated probabilities with an explicit
+``probabilistic, not proof'' disclaimer, user uploads are not retained beyond
+the request, and the model card documents intended use and limitations.
+
+\section{Economic Decision}
+\label{sec:economic}
+
+Two alternative strategies were compared for the experimental infrastructure.
+\textbf{Alternative A (cloud GPU rental)}: training on rented A100-class
+instances at current market rates, with an estimated total of
+\todo{X}~GPU-hours across all runs, ablations, and seeds. \textbf{Alternative B
+(owned DGX Spark workstation)}: a one-time hardware cost with negligible
+marginal cost per experiment. Because the experimental plan requires 15--20
+full training runs plus continuous development iteration, the owned-hardware
+alternative amortizes favorably within a single semester and removes the risk
+of budget-driven experiment truncation; it was therefore selected. The
+cached-feature training regime further reduces compute cost by amortizing the
+expensive encoder forward passes into a one-time preprocessing step.
+
+For real-world deployment, the cost breakdown of the proposed solution is
+deliberately minimal: the demonstration model is served from a free-tier
+Hugging Face Space (CPU) with an optional GPU upgrade
+(\todo{quote current rate}); the web interface is hosted on Vercel's free
+tier; and the heavyweight model can be self-hosted on the same DGX Spark
+workstation at an estimated \todo{X}~W average power draw. A platform-scale
+adopter would instead face inference costs of approximately
+\todo{estimate}~per thousand clips on commodity cloud GPUs, which the
+lightweight distilled variant is specifically designed to reduce.

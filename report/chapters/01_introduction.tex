@@ -1,15 +1,28 @@
-% ================================================================ chapter 1
+% ================================================================ CHAPTER 1
+% OBE 2.1 structure: 1.1 Background Analysis, 1.2 Existing Studies,
+% 1.3 Research Motivation and Objective, 1.4 Research Contribution.
 \chapter{Introduction}
 \label{ch:introduction}
 
-\section{Background}
-Generative artificial intelligence can now synthesize photorealistic talking-head
-video and natural-sounding cloned speech with minimal effort and data. Face-swapping,
-facial reenactment, lip-synchronization models, text-to-speech (TTS), and voice
-conversion (VC) systems are publicly available, and their outputs are increasingly
-difficult for humans to distinguish from genuine recordings. Because the visual and
-acoustic streams of a clip can be manipulated \emph{independently}, a single video
-can fall into one of four authenticity quadrants:
+\section{Background Analysis}
+\label{sec:background}
+
+The rapid advancement of generative artificial intelligence has transformed the
+creation of synthetic media from a specialized research activity into a
+commodity capability. Face-swapping, facial reenactment, lip-synchronization
+models, text-to-speech (TTS), and voice conversion (VC) systems are publicly
+available, and their outputs are increasingly indistinguishable from genuine
+recordings by human observers. International bodies and platform operators have
+repeatedly warned that manipulated audio-visual content is now used for
+disinformation, financial fraud, and non-consensual impersonation, making
+reliable detection a societal necessity rather than a purely academic exercise.
+
+The root cause of the detection problem is that the visual and acoustic streams
+of a video can be manipulated \emph{independently}. A single clip can therefore
+fall into one of four authenticity quadrants, summarized in
+Table~\ref{tab:quadrants}: both streams real (RVRA), a cloned voice dubbed over
+real footage (RVFA), a swapped or reenacted face over genuine speech (FVRA), or
+a fully synthetic combination (FVFA).
 
 \begin{table}[h]
 \centering
@@ -27,78 +40,165 @@ FVFA & \textbf{Fake} & \textbf{Fake} & Fully synthetic avatar (lip-sync + TTS) \
 \end{tabular}
 \end{table}
 
-\section{Problem Statement}
-The overwhelming majority of published audio-visual deepfake detectors reduce this
-problem to a single binary decision: the clip is either ``real'' or ``fake.'' This
-formulation is forensically inadequate for three reasons. First, it provides no
-\emph{attribution}: a journalist, court, or moderation system needs to know whether
-the face was swapped, the voice was cloned, or both. Second, binary detectors tend
-to shortcut on whichever modality is easier to classify, degrading accuracy on the
-harder stream. Third, modern manipulations are increasingly \emph{partial}: only a
-few seconds of audio or a short facial segment are altered, which a clip-level
-binary label cannot express.
+This problem is important because the overwhelming majority of published
+detectors collapse it into a single binary decision. Such a formulation is
+forensically inadequate for three reasons. First, it provides no
+\emph{attribution}: a journalist, court, or moderation system needs to know
+whether the face was swapped, the voice was cloned, or both. Second, binary
+detectors tend to shortcut on whichever modality is easier to classify,
+degrading accuracy on the harder stream. Third, modern manipulations are
+increasingly \emph{partial}---only a few seconds of audio or a short facial
+segment are altered---which a clip-level binary label cannot express. Solving
+per-modality attribution with temporal localization therefore places this
+thesis in the correct context of the wider synthetic-media forensics problem
+domain.
 
-\section{Research Questions}
-This thesis addresses the following research questions:
+\section{Existing Studies}
+\label{sec:existing}
+
+Five research threads are directly relevant to this study.
+
+\textbf{Unimodal video detection.} Early detectors treated the task as
+frame-level image classification: XceptionNet trained on
+FaceForensics++~\cite{rossler2019faceforensics} became the canonical baseline,
+followed by EfficientNet ensembles that won the Deepfake Detection
+Challenge~\cite{dolhansky2020dfdc}. Temporal methods such as
+LipForensics~\cite{haliassos2021lipforensics} and
+RealForensics~\cite{haliassos2022realforensics} model mouth-motion dynamics for
+stronger cross-manipulation generalization. These methods are blind to audio
+manipulation and degrade sharply under compression and dataset shift.
+
+\textbf{Unimodal audio spoofing detection.} The anti-spoofing community,
+organized around the ASVspoof challenges~\cite{wang2020asvspoof}, progressed
+from spectral features to end-to-end models such as
+RawNet2~\cite{tak2021rawnet2} and the spectro-temporal graph attention network
+AASIST~\cite{jung2022aasist}; self-supervised speech front-ends such as
+WavLM~\cite{chen2022wavlm} further improved robustness. Audio-only methods
+cannot detect facial manipulation.
+
+\textbf{Audio-visual binary detection.} Multimodal detectors fuse both streams
+but almost universally emit one label: the Modality Dissonance
+Score~\cite{chugh2020mds}, affective-cue matching~\cite{mittal2020emotions},
+and transformer fusion models such as AVFakeNet~\cite{ilyas2023avfakenet} and
+AVoiD-DF~\cite{yang2023avoiddf}. A real-video/fake-audio clip and a
+fake-video/real-audio clip receive the same output.
+
+\textbf{Consistency and localization.} SyncNet~\cite{chung2016syncnet}-style
+synchronization was exploited for anomaly-based detection~\cite{feng2023avanomaly},
+but consistency methods detect \emph{mismatch} without attributing which stream
+is fake and fail on fully synthetic clips whose fake streams are mutually
+consistent. LAV-DF~\cite{cai2022lavdf} and AV-Deepfake1M~\cite{cai2023avdeepfake1m}
+introduced temporal forgery localization, but localization is usually joint
+over modalities and cross-dataset generalization is under-reported.
+
+\textbf{Proxy-forgery training.} Self-Blended Images~\cite{shiohara2022sbi} and
+Face X-ray~\cite{li2020facexray} showed that synthesizing blending artifacts
+from pristine images generalizes better than training on generator outputs; the
+anti-spoofing literature found the same for vocoder
+copy-synthesis~\cite{wang2023vocoded}. Zhou and Lim~\cite{zhou2021joint}
+explored joint audio-visual labels but trained on generator outputs without a
+pretraining stage.
+
+\textbf{Research gap.} As summarized in Table~\ref{tab:gap}, no existing method
+simultaneously provides (a) independent per-modality authenticity, (b)
+cross-modal consistency reasoning, (c) temporal localization, and (d) validated
+cross-generator generalization in a single reproducible, deployable system.
+This study utilizes the strongest components of the existing literature
+(self-supervised encoders, contrastive synchronization, proxy forgeries) and
+extends them to close exactly this gap.
+
+\begin{table}[h]
+\centering
+\caption{Capability comparison of prior work and the proposed framework.}
+\label{tab:gap}
+\small
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Approach} & \textbf{Per-modality} & \textbf{Consistency} & \textbf{Localization} & \textbf{Cross-gen.\ eval} \\
+\midrule
+Unimodal video       & --      & --         & partial    & partial \\
+Unimodal audio       & --      & --         & partial    & partial \\
+AV binary fusion     & --      & partial    & --         & partial \\
+Sync/anomaly based   & --      & \checkmark & partial    & partial \\
+Localization (BA-TFD) & partial & partial   & \checkmark & -- \\
+\textbf{Proposed framework} & \checkmark & \checkmark & \checkmark & \checkmark \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Research Motivation and Objective}
+\label{sec:motivation}
+
+The general aim of this thesis is to contribute a forensic framework that moves
+synthetic-media detection from coarse binary classification to fine-grained,
+per-modality attribution with temporal localization, and to demonstrate that
+such attribution can generalize to generators never seen during training.
+
+The specific objectives are:
+\begin{itemize}
+  \item to design a unified framework that detects, per modality, whether the
+        video and the audio of a clip are real or AI-generated;
+  \item to propose DAVID-Net, a disentangled cross-modal transformer with
+        independent per-modality decision heads, a synchronization-consistency
+        module, and per-modality temporal localization;
+  \item to propose Quadrant-Aware Contrastive Pretraining (QACP), a
+        generator-free pretraining strategy for cross-generator generalization;
+  \item to evaluate the framework across multiple benchmarks with
+        cross-dataset, robustness, calibration, and fairness protocols; and
+  \item to deploy the detector as a publicly accessible web application.
+\end{itemize}
+
+The following research questions (RQs) are answered through the findings of
+this research:
 \begin{enumerate}[label=\textbf{RQ\arabic*.}]
   \item Can a single model produce independent, well-calibrated authenticity
-        decisions for the visual and acoustic streams while remaining competitive
-        with specialized unimodal detectors?
-  \item Does explicit modeling of audio-visual synchronization improve detection of
-        manipulations that break cross-modal coherence?
-  \item Does disentangling modality-specific authenticity evidence from cross-modal
-        consistency evidence improve generalization to unseen generators and datasets?
+        decisions for the visual and acoustic streams while remaining
+        competitive with specialized unimodal detectors?
+  \item Does explicit modeling of audio-visual synchronization improve
+        detection of manipulations that break cross-modal coherence?
+  \item Does disentangling modality-specific authenticity evidence from
+        cross-modal consistency evidence improve generalization to unseen
+        generators and datasets?
   \item Can the model temporally localize which segments of each stream were
         manipulated, and does this objective aid the clip-level decision?
   \item Is the detector robust to real-world degradations and fair across
         demographic subgroups?
-  \item Can an embedding space pretrained on synthetically constructed quadrants
-        built from pristine data alone generalize to real forgeries from unseen
-        generators better than supervised training on generator outputs?
+  \item Can an embedding space pretrained on synthetically constructed
+        quadrants built from pristine data alone generalize to real forgeries
+        from unseen generators better than supervised training on generator
+        outputs?
 \end{enumerate}
 
-\section{Objectives}
+\section{Research Contribution}
+\label{sec:contribution}
+
+The target users of the proposed solution are forensic analysts, journalists
+and fact-checking organizations, online platform moderation systems, and
+ordinary end users who need to verify received media. They benefit from
+verdicts that state \emph{which} stream was manipulated and \emph{when}, with
+calibrated confidence, rather than an unexplained binary flag; the deployed web
+interface makes this capability directly accessible without technical
+expertise.
+
+The contribution of this thesis to the development of scientific concepts is:
 \begin{itemize}
-  \item To design a unified forensic framework that detects, per modality, whether
-        the video and the audio of a clip are real or AI-generated.
-  \item To propose \textbf{DAVID-Net}, a disentangled cross-modal transformer with
-        independent per-modality decision heads, a synchronization-consistency
-        module, and per-modality temporal localization.
-  \item To propose \textbf{Quadrant-Aware Contrastive Pretraining (QACP)}, a
-        generator-free pretraining strategy for cross-generator generalization.
-  \item To evaluate the framework rigorously across multiple benchmarks with
-        cross-dataset, robustness, calibration, and fairness protocols.
-  \item To deploy the detector as a public web application (FastAPI inference API
-        on Hugging Face and a Next.js user interface).
+  \item \textbf{QACP}: a self-supervised pretraining stage that constructs all
+        four authenticity quadrants from pristine data only and structures
+        three embedding spaces with a factorized supervised-contrastive
+        objective, including an explicit \emph{real-but-mismatched} class that
+        teaches the model that desynchronization is not forgery;
+  \item a reformulation of audio-visual deepfake detection as a multi-task,
+        per-modality attribution and localization problem;
+  \item \textbf{DAVID-Net}, a disentangled dual-branch cross-modal transformer
+        architecture implementing this reformulation;
+  \item a generalization-first evaluation protocol with leave-one-generator-out
+        and cross-dataset testing as first-class results; and
+  \item a complete, reproducible, publicly deployed detection system.
 \end{itemize}
 
-\section{Contributions}
-The main contributions of this thesis are:
-\begin{enumerate}
-  \item \textbf{QACP}: a self-supervised pretraining stage that constructs all four
-        authenticity quadrants from pristine data only and structures three
-        embedding spaces with a factorized supervised-contrastive objective,
-        including an explicit \emph{real-but-mismatched} class that teaches the
-        model that desynchronization is not forgery.
-  \item A reformulation of audio-visual deepfake detection as a multi-task,
-        per-modality attribution and localization problem.
-  \item \textbf{DAVID-Net}, a disentangled dual-branch cross-modal transformer
-        architecture implementing this reformulation.
-  \item A generalization-first evaluation protocol with leave-one-generator-out and
-        cross-dataset testing as first-class results.
-  \item A complete, reproducible, publicly deployed detection system.
-\end{enumerate}
-
-\section{Scope and Limitations}
-This work targets talking-head style video with a single primary subject and
-speech audio, the dominant setting of current deepfake threats and benchmarks.
-Detection outputs are probabilistic assessments, not legal proof of authenticity.
-\todo{Refine scope after experiments.}
-
-\section{Thesis Organization}
-Chapter~\ref{ch:literature} reviews related work in unimodal and multimodal
-deepfake detection. Chapter~\ref{ch:methodology} presents the proposed framework,
-including DAVID-Net and QACP. Chapter~\ref{ch:setup} describes the datasets,
-preprocessing pipeline, implementation, and evaluation protocol.
-Chapter~\ref{ch:results} reports experimental results and ablation studies.
-Chapter~\ref{ch:conclusion} concludes and outlines future work.
+The remainder of this thesis is organized as follows.
+Chapter~\ref{ch:methodology} presents the research methodology, including the
+conceptual framework (DAVID-Net and QACP), the data collection process, ethical
+considerations, and the economic analysis. Chapter~\ref{ch:results} reports the
+results, their verification, and an impact analysis. The final chapter
+concludes the thesis and outlines directions for future work.

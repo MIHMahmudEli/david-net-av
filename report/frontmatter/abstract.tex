@@ -1,38 +1,54 @@
-% ---------------------------------------------------------------- abstract
+% ------------------------------------------------------------ abstract
+% Template rule: 300-500 words; state purpose, method summary, key findings,
+% and implications. Keywords follow as their own heading, max 10, lower case.
 \chapter*{Abstract}
 \addcontentsline{toc}{chapter}{Abstract}
 
-The rapid advancement of generative artificial intelligence has made it possible to
-synthesize convincing fake video and cloned speech independently, producing
-multimodal forgeries in which either stream---or both---may be manipulated. Existing
-audio-visual deepfake detectors typically collapse this rich problem into a single
-binary ``real versus fake'' decision, discarding forensically critical information
-about \emph{which} modality was manipulated and \emph{when}. This thesis presents a
-unified forensic framework that reformulates multimodal synthetic-media detection as
-a fine-grained attribution problem: given a video clip, the framework independently
-determines whether the visual stream and the acoustic stream are authentic or
-AI-generated, assigns the clip to one of four authenticity quadrants (real/real,
-real-video--fake-audio, fake-video--real-audio, fake/fake), and temporally localizes
-the manipulated segments in each stream. At the core of the framework is
-\textbf{DAVID-Net}, a disentangled dual-branch cross-modal transformer that separates
-modality-specific authenticity evidence from cross-modal consistency evidence, allowing
-it to detect internally consistent double-fakes that defeat synchronization-based
-detectors. To achieve generalization to unseen generators, we introduce
-\textbf{Quadrant-Aware Contrastive Pretraining (QACP)}, a self-supervised stage that
-constructs all four authenticity quadrants from pristine data alone---via self-blended
-face video, vocoder copy-synthesis audio, and cross-clip mismatch---and structures the
-embedding space with a factorized supervised-contrastive objective, without using any
-deepfake generator outputs. The framework is evaluated on FakeAVCeleb, AV-Deepfake1M,
-and LAV-DF, with cross-dataset validation on DFDC and KoDF, using per-modality AUC,
-four-class attribution accuracy, temporal localization AP, calibration, robustness,
-and fairness metrics. \todo{Summarize final results here once experiments complete.}
-The complete system is deployed as a public web service comprising a FastAPI inference
-API and a Next.js user interface, enabling end users to verify whether the video and
-voice of a clip are genuine or AI-generated.
+The purpose of this research is to address a critical limitation of current
+synthetic-media forensics: existing audio-visual deepfake detectors reduce a
+rich, multimodal problem to a single binary ``real versus fake'' decision,
+discarding forensically essential information about \emph{which} modality of a
+video was manipulated and \emph{when}. Because modern generative artificial
+intelligence can synthesize facial video and cloned speech independently, a
+clip may contain a genuine face with a cloned voice, a swapped face over
+genuine speech, or a fully synthetic combination of both; distinguishing these
+cases is necessary for journalism, content moderation, and legal contexts.
 
-\vspace{0.6cm}
-\noindent\textbf{Keywords:} deepfake detection, multimodal forensics, audio-visual
-learning, synthetic media, contrastive pretraining, temporal localization,
-generative AI.
+This thesis proposes a unified forensic framework that reformulates the task as
+fine-grained, per-modality attribution. Given a video clip, the framework
+independently determines whether the visual stream and the acoustic stream are
+authentic or AI-generated, assigns the clip to one of four authenticity
+quadrants, and temporally localizes the manipulated segments in each stream. At
+its core is DAVID-Net, a disentangled dual-branch cross-modal transformer that
+separates modality-specific authenticity evidence from cross-modal consistency
+evidence, enabling the detection of internally consistent double-fakes that
+defeat synchronization-based detectors. To generalize to unseen generators, the
+study introduces Quadrant-Aware Contrastive Pretraining (QACP): a
+self-supervised stage that constructs all four authenticity quadrants from
+pristine data alone---using self-blended face video, vocoder copy-synthesis
+audio, and cross-clip mismatch---and structures the embedding space with a
+factorized supervised-contrastive objective, without using any deepfake
+generator outputs. The framework is evaluated on FakeAVCeleb, AV-Deepfake1M,
+and LAV-DF, with cross-dataset validation on DFDC and KoDF, using per-modality
+AUC, four-class attribution accuracy, temporal localization average precision,
+calibration, robustness, and fairness metrics.
+
+\todo{Summarize the primary findings in two to three sentences once experiments
+are complete.}
+
+The findings would be helpful for forensic analysts, fact-checking
+organizations, and online platforms that must not only flag manipulated media
+but also explain which component was fabricated. The complete system is
+released as reproducible open-source software and deployed as a public web
+service comprising a FastAPI inference API and a Next.js user interface,
+allowing end users to verify whether the video and the voice of a clip are
+genuine or AI-generated.
+
+\chapter*{Keywords}
+\addcontentsline{toc}{chapter}{Keywords}
+
+deepfake detection, multimodal forensics, audio-visual learning, synthetic
+media, contrastive pretraining, temporal localization, generative ai,
+cross-modal consistency
 
 \clearpage

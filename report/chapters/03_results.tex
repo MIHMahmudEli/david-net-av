@@ -1,0 +1,131 @@
+% ================================================================ CHAPTER 3
+% OBE 2.1 structure: 3.1 Results and Analysis, 3.2 Accuracy and
+% Verification, 3.3 Impact Analysis.
+\chapter{Results and Analysis}
+\label{ch:results}
+
+\section{Results and Analysis}
+\label{sec:results}
+
+\todo{This section is populated as experiments complete. The table skeletons
+below define the empirical evidence for each research question.}
+
+The proposed solution answers the research questions through four families of
+evidence: in-domain attribution (RQ1), cross-dataset and cross-generator
+generalization (RQ3, RQ6), temporal localization (RQ4), and module ablations
+(RQ2, RQ6). The basic functionality of the proposed solution---independent
+per-modality verdicts with quadrant attribution and manipulation
+timelines---makes use of state-of-the-art self-supervised encoders and the
+QACP pretraining strategy introduced in Chapter~\ref{ch:methodology}.
+
+\begin{table}[h]
+\centering
+\caption{Per-modality and quadrant results on FakeAVCeleb (subject-disjoint test split). \todo{fill}}
+\label{tab:indomain}
+\small
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Method} & \textbf{Video AUC} & \textbf{Audio AUC} & \textbf{Quadrant Acc.} & \textbf{Macro-F1} & \textbf{EER} \\
+\midrule
+Xception (video-only)     & -- & -- & -- & -- & -- \\
+AASIST (audio-only)       & -- & -- & -- & -- & -- \\
+MDS                       & -- & -- & -- & -- & -- \\
+AVoiD-DF                  & -- & -- & -- & -- & -- \\
+\textbf{Proposed (ours)}  & -- & -- & -- & -- & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\caption{Cross-dataset AUC: train on FakeAVCeleb + AV-Deepfake1M, test unseen. \todo{fill}}
+\label{tab:crossdataset}
+\small
+\begin{tabular}{lccc}
+\toprule
+\textbf{Method} & \textbf{DFDC} & \textbf{KoDF} & \textbf{DF-TIMIT} \\
+\midrule
+Best unimodal baseline      & -- & -- & -- \\
+Best multimodal baseline    & -- & -- & -- \\
+Proposed w/o QACP           & -- & -- & -- \\
+\textbf{Proposed + QACP}    & -- & -- & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\caption{Ablation study. Each row reports in-domain and cross-dataset AUC. \todo{fill}}
+\label{tab:ablation}
+\small
+\begin{tabular}{lcc}
+\toprule
+\textbf{Configuration} & \textbf{In-domain AUC} & \textbf{Cross-dataset AUC} \\
+\midrule
+Full framework (+ QACP)          & -- & -- \\
+$-$ QACP pretraining             & -- & -- \\
+$-$ MISMATCH pseudo-class        & -- & -- \\
+$-$ synchronization module       & -- & -- \\
+$-$ disentanglement loss         & -- & -- \\
+early fusion                     & -- & -- \\
+late fusion                      & -- & -- \\
+single-task (binary only)        & -- & -- \\
+$-$ localization head            & -- & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\todo{Add temporal localization table (AP@IoU on AV-Deepfake1M and LAV-DF vs.\
+BA-TFD+), qualitative figures (attention heatmaps, synchronization curves,
+localization timelines), and a discussion connecting each result to its RQ.}
+
+\section{Accuracy and Verification}
+\label{sec:verification}
+
+\todo{Fill after experiments.} The accuracy of the findings is verified through
+four mechanisms, each establishing a direct connection between the collected
+research data and the research objective. First, \emph{statistical
+verification}: every headline metric is reported as the mean and standard
+deviation over three seeds with bootstrap 95\% confidence intervals, and AUC
+differences against baselines are tested with DeLong tests under
+Holm--Bonferroni correction. Second, \emph{calibration}: expected calibration
+error and reliability diagrams verify that reported confidences are
+trustworthy, which is essential for forensic use. Third, \emph{robustness}:
+detection quality is measured under H.264 re-compression, audio noise, and
+resolution loss to identify potential points of failure, and the observed
+degradation profile defines the operating envelope of the system. Fourth,
+\emph{external validity}: cross-dataset and leave-one-generator-out protocols
+verify that the solution is resilient to distribution shift rather than fitted
+to one benchmark. Trade-offs between the full research model and the
+lightweight deployed variant (accuracy versus latency and hosting cost) are
+presented to reflect realistic product requirements.
+
+\section{Impact Analysis}
+\label{sec:impact}
+
+\textbf{Societal impact.} Reliable per-modality attribution strengthens the
+information ecosystem: fact-checkers can state precisely which component of a
+viral clip was fabricated, platforms can apply proportionate moderation, and
+citizens gain a free verification tool. Conversely, detector outputs could be
+misused to dismiss authentic evidence (``liar's dividend''); the system
+mitigates this by reporting calibrated probabilities with explicit uncertainty
+rather than categorical verdicts.
+
+\textbf{Legal and safety issues.} Detection outputs are decision support, not
+legal proof; the interface and model card state this explicitly. The
+framework's localization output supports human expert review, which remains
+the appropriate standard in legal contexts.
+
+\textbf{Cultural and fairness issues.} Because training corpora
+over-represent some demographics and languages, the fairness audit
+(Section~\ref{sec:verification}) quantifies subgroup gaps, and balanced
+sampling reduces them; residual gaps are documented so downstream users
+understand for whom the detector is less reliable.
+
+\textbf{Sustainability.} The cached-feature training regime and the
+lightweight deployed variant minimize energy consumption relative to
+end-to-end training and serving of large models. The QACP construction is
+self-refreshing---new pseudo-forgeries can be synthesized from pristine data
+as generators evolve---so the solution remains maintainable without repeated
+large-scale data collection, benefiting stakeholders from platform operators
+to end users.
