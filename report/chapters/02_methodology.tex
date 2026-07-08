@@ -44,7 +44,9 @@ stream $x_a$. The framework predicts:
   video branch, orange the audio branch, violet the cross-modal consistency
   path, and green the multi-task decision heads. The consistency embedding
   $z_c$ is kept disentangled from the modality-specific authenticity
-  embeddings $z_v$ and $z_a$.}
+  embeddings $z_v$ and $z_a$. Dashed elements show missing-modality support:
+  an absent stream is replaced by learnable null tokens and $z_c$ is zeroed,
+  enabling audio-only and silent-video inference.}
   \label{fig:architecture}
 \end{figure}
 

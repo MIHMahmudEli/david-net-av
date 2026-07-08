@@ -30,6 +30,12 @@
 \node[abox] (aenc) at (6.0, -2.4) {WavLM\\encoder (frozen)};
 \node[abox] (atok) at (9.0, -2.4) {$A \in \mathbb{R}^{L_a \times d}$\\audio tokens};
 
+% ---------------- missing-modality null tokens ----------------
+\node[box, dashed, fill=blue!5, minimum width=1.6cm] (nullv) at (9.0, 4.3)
+  {null tokens\\(video absent)};
+\node[box, dashed, fill=orange!8, minimum width=1.6cm] (nulla) at (9.0, -4.3)
+  {null tokens\\(audio absent)};
+
 % ---------------- sync module (middle) ----------------
 \node[cbox] (sync) at (9.0, 0) {Sync module\\(windowed InfoNCE)};
 
@@ -94,9 +100,16 @@
 \draw[arr] (hloc) -- (oloc);
 \draw[arr] (ha) -- (oa);
 
-% disentanglement annotation
+% null-token substitution arrows
+\draw[arr, dashed] (nullv) -- (vtok);
+\draw[arr, dashed] (nulla) -- (atok);
+
+% disentanglement + availability-gating annotations
 \node[align=center, violet!60!black] at (14.6, -4.4)
   {$\mathcal{L}_{dis}$: $z_c \perp z_v,\ z_c \perp z_a$\\(orthogonality penalty)};
 \draw[carr, dashed] (14.6, -4.0) -- (zc.south);
+\node[align=center, violet!60!black] at (14.6, 4.3)
+  {$z_c \leftarrow 0$ if either\\modality is missing};
+\draw[carr, dashed] (14.6, 3.7) -- (zc.north);
 
 \end{tikzpicture}}%
