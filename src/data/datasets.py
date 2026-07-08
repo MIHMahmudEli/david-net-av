@@ -80,6 +80,30 @@ class AVDeepfakeDataset(Dataset):
         }
 
 
+class CachedFeatureDataset(AVDeepfakeDataset):
+    """Serves precomputed SSL token sequences instead of raw media.
+
+    Produced by src/data/extract_features.py. Batches have the same keys as
+    AVDeepfakeDataset, but 'video'/'audio' hold feature tensors (L, d) — the model
+    must be built with identity encoders (cfg.feature_cache set; see train.py).
+    """
+
+    def __init__(self, manifest: str, feature_cache: str, n_frames: int = 16,
+                 audio_len: int = 64000, filt=None):
+        super().__init__(manifest, shard_root=None, n_frames=n_frames,
+                         audio_len=audio_len, filt=filt)
+        self.cache = Path(feature_cache)
+
+    def _load_tensors(self, rec):
+        vp = self.cache / f"{rec['clip_id']}_vfeat.pt"
+        ap = self.cache / f"{rec['clip_id']}_afeat.pt"
+        if not (vp.exists() and ap.exists()):
+            raise FileNotFoundError(
+                f"missing cached features for {rec['clip_id']} in {self.cache} — "
+                "run src/data/extract_features.py first")
+        return torch.load(vp), torch.load(ap)
+
+
 def collate(batch):
     out = {}
     keys_tensor = ["video", "audio", "video_label", "audio_label", "quadrant",

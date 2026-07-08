@@ -77,6 +77,35 @@ def test_synthetic_quadrants():
     assert not torch.allclose(fvra["video"], frames)
 
 
+def test_feature_cache_roundtrip(tmp_path):
+    """extract_features -> CachedFeatureDataset -> identity-encoder model forward."""
+    from types import SimpleNamespace
+    from src.data.extract_features import extract
+    from src.data.datasets import CachedFeatureDataset, collate
+    from src.training.train import build_model
+
+    cfg = SimpleNamespace(
+        d_model=768, n_heads=8, n_fusion_layers=1, dropout=0.0,
+        use_sync=True, use_disentangle=True, compose_quadrant=False,
+        video_backbone="fallback", audio_backbone="fallback",
+        n_frames=4, audio_len=16000, shard_root=None, num_workers=0,
+        feature_cache=None,
+    )
+    manifest = "src/data/splits/train.jsonl"
+    cache = str(tmp_path / "feats")
+    extract(cfg, manifest, cache, batch_size=4)
+
+    ds = CachedFeatureDataset(manifest, cache, cfg.n_frames, cfg.audio_len)
+    batch = collate([ds[i] for i in range(2)])
+    assert batch["video"].dim() == 3  # (B, L_v, d) features, not raw frames
+
+    cfg.feature_cache = cache
+    model = build_model(cfg)          # identity encoders
+    out = model(batch["video"], batch["audio"])
+    assert out["logit_v"].shape == (2,)
+    assert out["logit_quad"].shape == (2, 4)
+
+
 def test_metrics():
     m = per_modality([0, 1, 0, 1], [0.1, 0.9, 0.2, 0.8])
     assert 0.0 <= m["auc"] <= 1.0

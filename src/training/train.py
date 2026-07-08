@@ -27,8 +27,14 @@ def build_model(cfg) -> DavidNet:
         dropout=cfg.dropout, use_sync=cfg.use_sync, use_disentangle=cfg.use_disentangle,
         compose_quadrant=cfg.compose_quadrant,
     )
-    venc = build_video_encoder(cfg)
-    aenc = build_audio_encoder(cfg)
+    if getattr(cfg, "feature_cache", None):
+        # Phase-A cached-feature regime: inputs are already (L, d) token sequences,
+        # so the encoders collapse to identity (docs/07_compute_and_hardware.md §2).
+        import torch.nn as nn
+        venc, aenc = nn.Identity(), nn.Identity()
+    else:
+        venc = build_video_encoder(cfg)
+        aenc = build_audio_encoder(cfg)
     return DavidNet(mcfg, venc, aenc)
 
 
@@ -43,7 +49,13 @@ def train(cfg):
     set_seed(cfg.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    train_ds = AVDeepfakeDataset(cfg.train_manifest, cfg.shard_root, cfg.n_frames, cfg.audio_len)
+    if getattr(cfg, "feature_cache", None):
+        from src.data.datasets import CachedFeatureDataset
+        train_ds = CachedFeatureDataset(cfg.train_manifest, cfg.feature_cache,
+                                        cfg.n_frames, cfg.audio_len)
+    else:
+        train_ds = AVDeepfakeDataset(cfg.train_manifest, cfg.shard_root,
+                                     cfg.n_frames, cfg.audio_len)
     train_dl = DataLoader(train_ds, batch_size=cfg.batch_size, shuffle=True,
                           num_workers=cfg.num_workers, collate_fn=collate)
 

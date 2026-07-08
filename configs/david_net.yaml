@@ -27,6 +27,8 @@ init_from: null                # e.g. runs/qacp/qacp_epoch19.pt
 n_frames: 16
 audio_len: 64000               # 4 s @ 16 kHz
 shard_root: null               # dir of preprocessed *_video.pt / *_audio.pt shards
+feature_cache: null            # dir of cached SSL features (Phase A regime);
+                               # produce with: python -m src.data.extract_features
 train_manifest: src/data/splits/train.jsonl
 
 # --- optimization ---
