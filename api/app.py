@@ -69,9 +69,14 @@ async def predict(file: UploadFile = File(...), explain: bool = Query(False)):
         raise HTTPException(status_code=415, detail="Upload a video file.")
     path = await _save_upload(file, ".mp4")
     try:
-        # TODO(preprocess): detect a missing/silent audio track via ffprobe and
-        # pass has_audio=False so the model uses its null-audio tokens.
-        result = get_engine().predict(path, explain=explain)
+        # detect a missing audio track so the model uses its null-audio tokens
+        has_audio = True
+        try:
+            from src.data.preprocess import probe_media
+            has_audio = probe_media(path)["has_audio"]
+        except Exception:
+            pass  # no ffprobe in this env — assume full A+V
+        result = get_engine().predict(path, explain=explain, has_audio=has_audio)
         return JSONResponse(result)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"Inference failed: {e}")

@@ -4,14 +4,18 @@ numpy>=1.24
 scikit-learn>=1.3
 pyyaml>=6.0
 
-# Real backbones / preprocessing (uncomment when using videomae/wavlm + real data)
+# Real backbones (uncomment when using videomae/wavlm)
 # transformers>=4.40
 # torchaudio>=2.1
-# opencv-python-headless>=4.9
-# mediapipe>=0.10
-# ffmpeg-python>=0.2
+
+# Preprocessing (src/data/preprocess.py). REQUIRED: ffmpeg + ffprobe on PATH.
+# Face detection backend chain (best first; any one is enough, else center-fallback):
+# insightface>=0.7 onnxruntime>=1.17   # RetinaFace + landmarks (preferred; true mouth crop)
+# mediapipe>=0.10                      # fragile on ARM64/DGX Spark — see docs/07
+# opencv-python-headless>=4.9          # Haar cascade fallback + faster image ops
+
+# Data plumbing (optional)
 # webdataset>=0.2
-# librosa>=0.10
 
 # Experiment tracking (optional)
 # wandb>=0.16

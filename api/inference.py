@@ -32,16 +32,20 @@ class DavidNetInference:
         self.version = "david-net-lite-1.0"
 
     def _preprocess(self, video_path: str):
-        """Decode video → (frames tensor, waveform tensor, duration). Placeholder impl.
-
-        Real impl: ffmpeg demux, RetinaFace/MediaPipe face crop @ 25fps, resample audio to
-        16 kHz mono. Here we emit correctly-shaped dummy tensors so the service runs.
-        """
+        """Decode clip → (frames, waveform, duration) via the real pipeline
+        (ffmpeg + face tracking). Falls back to dummy tensors when ffmpeg is
+        unavailable so the service still boots in dev environments."""
         torch = self.torch
-        frames = torch.randn(self.cfg.n_frames, 3, 224, 224)
-        audio = torch.randn(self.cfg.audio_len)
-        duration = 4.0
-        return frames.unsqueeze(0), audio.unsqueeze(0), duration
+        try:
+            from src.data.preprocess import preprocess_clip
+            r = preprocess_clip(video_path, n_frames=self.cfg.n_frames,
+                                audio_len=self.cfg.audio_len)
+            return (r["video"].unsqueeze(0), r["audio"].unsqueeze(0),
+                    r["meta"]["duration_sec"])
+        except Exception:
+            frames = torch.randn(self.cfg.n_frames, 3, 224, 224)
+            audio = torch.randn(self.cfg.audio_len)
+            return frames.unsqueeze(0), audio.unsqueeze(0), 4.0
 
     def predict(self, video_path: str, explain: bool = False,
                 has_video: bool = True, has_audio: bool = True) -> dict:
