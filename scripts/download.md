@@ -16,10 +16,20 @@ Record the license + your approval date in this file as you go.
 | In-the-Wild (voice) | Public download | Real-world voice-clone generalization |
 | WaveFake / LibriSeVoc | Public | Extra vocoder/TTS diversity |
 
-## After download
-1. Put raw data under `data/<dataset>/` (git-ignored).
-2. Run the per-dataset converter to produce a unified manifest:
-   `python scripts/build_manifest.py --dataset fakeavceleb --root data/fakeavceleb --out src/data/manifests/fakeavceleb.jsonl`
-   (Write one small converter per dataset — they only need to emit the schema in `docs/03_datasets.md`.)
-3. Preprocess into shards: `python -m src.data.preprocess --manifest ... --out data/shards/<dataset>`
-4. Build split files (`src/data/splits/*.jsonl`) — subject-disjoint; commit them for reproducibility.
+## After download (FakeAVCeleb — the full chain)
+1. Put raw data under `data/fakeavceleb/` (git-ignored).
+2. Manifest + subject-disjoint + LOGO splits in one command:
+   ```
+   python scripts/build_manifest.py --root data/fakeavceleb \
+       --out src/data/manifests/fakeavceleb.jsonl \
+       --splits-dir src/data/splits/fakeavceleb --seed 42
+   ```
+   Commit the generated split files for reproducibility.
+3. Preprocess into shards (face/mouth crops + audio):
+   `python -m src.data.preprocess --manifest src/data/manifests/fakeavceleb.jsonl --raw-root data/fakeavceleb --out data/shards/fakeavceleb`
+4. Cache SSL features (Phase A):
+   `python -m src.data.extract_features --config configs/david_net.yaml --manifest src/data/manifests/fakeavceleb.jsonl --out data/feats/fakeavceleb`
+5. Train: `pretrain_qacp` (Stage 0) then `train` (Stage 1) — see README quickstart.
+
+(Other datasets: write one small converter each in `scripts/`, emitting the schema
+in `docs/03_datasets.md` §4 — the rest of the chain is dataset-agnostic.)
