@@ -32,7 +32,7 @@ def evaluate(cfg, checkpoint: str, manifest: str) -> dict:
     dl = DataLoader(ds, batch_size=cfg.batch_size, shuffle=False,
                     num_workers=cfg.num_workers, collate_fn=collate)
 
-    pv, pa, pq, yv, ya, yq = [], [], [], [], [], []
+    pv, pa, pq, yv, ya, yq, ids, gens = [], [], [], [], [], [], [], []
     for batch in dl:
         batch = move(batch, device)
         out = model(batch["video"], batch["audio"])
@@ -42,8 +42,13 @@ def evaluate(cfg, checkpoint: str, manifest: str) -> dict:
         yv += batch["video_label"].cpu().tolist()
         ya += batch["audio_label"].cpu().tolist()
         yq += batch["quadrant"].cpu().tolist()
+        ids += batch["clip_id"]
+        gens += batch["generator"]
 
     report = {
+        "method": "david-net",
+        "checkpoint": checkpoint,
+        "test_manifest": manifest,
         "video": per_modality(yv, pv),
         "audio": per_modality(ya, pa),
         "quadrant": quadrant_metrics(yq, pq),
@@ -52,6 +57,14 @@ def evaluate(cfg, checkpoint: str, manifest: str) -> dict:
             "audio_ece": expected_calibration_error(ya, pa),
         },
         "n": len(yv),
+        # raw predictions: the figure generator (src/eval/figures.py) builds
+        # ROC / reliability / per-generator breakdowns from these
+        "preds": {
+            "clip_id": ids, "generator": gens,
+            "video": {"y_true": yv, "y_score": pv},
+            "audio": {"y_true": ya, "y_score": pa},
+            "quadrant": {"y_true": yq, "y_pred": pq},
+        },
     }
     return report
 
@@ -66,8 +79,9 @@ def main():
     cfg = load_config(args.config)
     report = evaluate(cfg, args.checkpoint, args.manifest)
     with open(args.out, "w", encoding="utf-8") as f:
-        json.dump(report, f, indent=2)
-    print(json.dumps(report, indent=2))
+        json.dump(report, f)
+    printable = {k: v for k, v in report.items() if k != "preds"}
+    print(json.dumps(printable, indent=2))
 
 
 if __name__ == "__main__":

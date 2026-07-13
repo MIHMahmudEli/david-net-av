@@ -73,6 +73,21 @@ training regime, and BF16. See [`docs/07_compute_and_hardware.md`](docs/07_compu
 
 ---
 
+## Continuing this project
+**Read [`HANDOFF.md`](HANDOFF.md) first** — it is the complete continuation guide:
+current state, the exact command playbook to run when datasets arrive, known
+pitfalls, how results flow into the thesis report, and the remaining task list.
+
+When the data lands, the whole experiment matrix is:
+```bash
+python scripts/run_experiments.py --base configs/david_net.yaml \
+    --test-manifest src/data/splits/fakeavceleb/test.jsonl --seeds 42 43 44
+python scripts/aggregate_results.py --results results/ --metric video.auc --boot
+python -m src.eval.figures --results results/ --out report/figures/generated
+```
+Thesis figures regenerate automatically from the result JSONs and appear in the
+report on the next `pdflatex` run.
+
 ## Roadmap
 See the 12-month plan in [`docs/01_research_proposal.md`](docs/01_research_proposal.md#9-timeline-12-months).
 Dataset access requests should start **first** — approvals are slow (see [`scripts/download.md`](scripts/download.md)).

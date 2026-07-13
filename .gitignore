@@ -10,6 +10,9 @@ env/
 /data/
 /weights/
 runs/
+# results JSONs contain full prediction dumps (large); commit only the
+# aggregated tables/figures derived from them
+/results/
 *.pt
 *.pth
 *.ckpt

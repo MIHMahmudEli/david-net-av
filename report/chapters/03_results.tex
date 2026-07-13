@@ -76,8 +76,62 @@ $-$ localization head            & -- & -- \\
 \end{table}
 
 \todo{Add temporal localization table (AP@IoU on AV-Deepfake1M and LAV-DF vs.\
-BA-TFD+), qualitative figures (attention heatmaps, synchronization curves,
-localization timelines), and a discussion connecting each result to its RQ.}
+BA-TFD+) and a discussion connecting each result to its RQ.}
+
+% ------------------------------------------------------------------
+% Auto-generated results figures. Produced by:
+%   python -m src.eval.figures --results results/ --out report/figures/generated
+% They appear automatically once the result JSONs exist (HANDOFF.md §5, §7).
+% ------------------------------------------------------------------
+\IfFileExists{figures/generated/results_roc.pdf}{%
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=\textwidth]{generated/results_roc}
+  \caption{ROC curves of the proposed framework and baselines, per modality.}
+  \label{fig:roc}
+\end{figure}}{}
+
+\IfFileExists{figures/generated/results_confusion.pdf}{%
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.55\textwidth]{generated/results_confusion}
+  \caption{Quadrant confusion matrix on the FakeAVCeleb test split.}
+  \label{fig:confusion}
+\end{figure}}{}
+
+\IfFileExists{figures/generated/results_ablation.pdf}{%
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.9\textwidth]{generated/results_ablation}
+  \caption{Ablation study: in-domain versus cross-dataset AUC per configuration.}
+  \label{fig:ablation}
+\end{figure}}{}
+
+\IfFileExists{figures/generated/results_localization.pdf}{%
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.9\textwidth]{generated/results_localization}
+  \caption{Qualitative temporal localization: per-frame manipulation probability
+  against ground-truth manipulated intervals (shaded).}
+  \label{fig:localization}
+\end{figure}}{}
+
+\IfFileExists{figures/generated/results_reliability.pdf}{%
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=\textwidth]{generated/results_reliability}
+  \caption{Reliability diagrams per modality with expected calibration error.}
+  \label{fig:reliability}
+\end{figure}}{}
+
+\IfFileExists{figures/generated/results_robustness.pdf}{%
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=\textwidth]{generated/results_robustness}
+  \caption{Robustness: AUC under video degradations (blur, resolution loss,
+  quantization) and audio noise (SNR).}
+  \label{fig:robustness}
+\end{figure}}{}
 
 \section{Accuracy and Verification}
 \label{sec:verification}
