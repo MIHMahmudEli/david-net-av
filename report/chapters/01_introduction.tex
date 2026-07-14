@@ -17,6 +17,40 @@ repeatedly warned that manipulated audio-visual content is now used for
 disinformation, financial fraud, and non-consensual impersonation, making
 reliable detection a societal necessity rather than a purely academic exercise.
 
+The 2024--2026 period sharply escalated this threat along both modalities.
+On the acoustic side, neural-codec language models such as
+VALL-E~\cite{wang2023valle} demonstrated zero-shot voice cloning from a
+three-second enrollment sample, and this capability was rapidly
+productionized by factorized-codec and diffusion synthesizers such as
+NaturalSpeech~3~\cite{ju2024naturalspeech3} and by openly released
+multilingual systems including XTTS~\cite{casanova2024xtts} and
+CosyVoice~\cite{du2024cosyvoice}, which together place high-fidelity voice
+cloning in more than one hundred languages behind a single API call or a
+consumer-grade GPU. On the visual side, audio-driven portrait animators such
+as EMO~\cite{tian2024emo} and VASA-1~\cite{xu2024vasa} generate lip-synced,
+emotionally expressive talking-head video of a target identity from a single
+photograph---VASA-1 in real time---while large-scale diffusion video models
+exemplified by Sora~\cite{brooks2024sora} indicate that fully synthetic,
+photorealistic scenes no longer require a source recording at all. The
+practical consequences are already documented: multimodal impersonation has
+been used in corporate video-conference fraud with losses exceeding
+US\$25~million in a single 2024 incident, in large-scale political
+robocall and election-manipulation campaigns, and in pervasive
+non-consensual intimate imagery. Regulators have responded---the European
+Union AI Act~\cite{euaiact2024} imposes explicit transparency and labeling
+obligations on synthetic media---but labeling presumes cooperative
+generators; adversarial use requires \emph{detection}.
+
+Measurement studies confirm that detection has not kept pace with
+generation. The Deepfake-Eval-2024 benchmark~\cite{chandra2025deepfakeeval},
+which collected deepfakes actually circulating on social media during 2024,
+reports that the AUC of state-of-the-art open-source detectors drops by
+roughly 45--50\% relative to their academic-benchmark performance when they
+are confronted with contemporary in-the-wild forgeries. This gap between
+laboratory accuracy and field robustness---driven by unseen generators,
+re-compression, and mixed-modality manipulation---is precisely the failure
+mode that motivates the generalization-first design of this thesis.
+
 The root cause of the detection problem is that the visual and acoustic streams
 of a video can be manipulated \emph{independently}. A single clip can therefore
 fall into one of four authenticity quadrants, summarized in
@@ -56,7 +90,12 @@ domain.
 \section{Existing Studies}
 \label{sec:existing}
 
-Five research threads are directly relevant to this study.
+Six research threads are directly relevant to this study. Comprehensive
+surveys of the field are provided by Masood et al.~\cite{masood2023survey}
+for generation and detection at large, Pei et al.~\cite{pei2024survey} for a
+2024 benchmark-oriented view, and Liu et al.~\cite{liu2024multimodalsurvey}
+specifically for the transition from single-modal to multi-modal facial
+deepfake detection that this thesis addresses.
 
 \textbf{Unimodal video detection.} Early detectors treated the task as
 frame-level image classification: XceptionNet trained on
@@ -65,39 +104,84 @@ followed by EfficientNet ensembles that won the Deepfake Detection
 Challenge~\cite{dolhansky2020dfdc}. Temporal methods such as
 LipForensics~\cite{haliassos2021lipforensics} and
 RealForensics~\cite{haliassos2022realforensics} model mouth-motion dynamics for
-stronger cross-manipulation generalization. These methods are blind to audio
-manipulation and degrade sharply under compression and dataset shift.
+stronger cross-manipulation generalization, and TALL~\cite{xu2023tall}
+rearranges consecutive frames into thumbnail layouts so that a standard image
+backbone captures temporal inconsistency. The most recent wave targets
+\emph{generalization} explicitly: latent-space augmentation synthesizes
+harder forgery variants in feature space~\cite{yan2024lsda}, LAA-Net combines
+localized artifact attention with quality-agnostic training~\cite{nguyen2024laanet},
+style-latent temporal flows expose the unnaturally stable style dynamics of
+generated faces~\cite{choi2024stylelatent}, and Ba et
+al.~\cite{ba2024exposing} extract complementary forgery clues through an
+information-bottleneck objective. The systematic DeepfakeBench
+evaluation~\cite{yan2023deepfakebench} nevertheless shows that even these
+detectors lose 10--25 AUC points under dataset shift---and all of them are
+blind to audio manipulation.
 
 \textbf{Unimodal audio spoofing detection.} The anti-spoofing community,
 organized around the ASVspoof challenges~\cite{wang2020asvspoof}, progressed
 from spectral features to end-to-end models such as
 RawNet2~\cite{tak2021rawnet2} and the spectro-temporal graph attention network
 AASIST~\cite{jung2022aasist}; self-supervised speech front-ends such as
-WavLM~\cite{chen2022wavlm} further improved robustness. Audio-only methods
-cannot detect facial manipulation.
+wav2vec~2.0~\cite{tak2022ssl} and WavLM~\cite{chen2022wavlm} substantially
+improved robustness. The 2024--2025 generation of resources reflects the
+codec-based synthesis era: ASVspoof~5~\cite{wang2024asvspoof5} introduces
+crowdsourced acoustic conditions and adversarial attacks at scale,
+MLAAD~\cite{muller2024mlaad} covers 23 languages and dozens of TTS
+architectures, Codecfake~\cite{xie2024codecfake} targets neural-codec
+synthesizers directly, and SpoofCeleb~\cite{jung2025spoofceleb} sources
+spoofing data from in-the-wild speech. On the modeling side,
+style--linguistics mismatch~\cite{zhu2024slim} improves generalization to
+unseen spoofing families. Audio-only methods, however, cannot detect facial
+manipulation.
 
 \textbf{Audio-visual binary detection.} Multimodal detectors fuse both streams
 but almost universally emit one label: the Modality Dissonance
 Score~\cite{chugh2020mds}, affective-cue matching~\cite{mittal2020emotions},
 and transformer fusion models such as AVFakeNet~\cite{ilyas2023avfakenet} and
-AVoiD-DF~\cite{yang2023avoiddf}. A real-video/fake-audio clip and a
-fake-video/real-audio clip receive the same output.
+AVoiD-DF~\cite{yang2023avoiddf}. The strongest recent representative,
+AVFF~\cite{oorloff2024avff}, learns audio-visual correspondences with a
+two-stage self-supervised objective before supervised fusion and reports
+state-of-the-art accuracy on FakeAVCeleb---yet still collapses its output to
+a single binary label. A real-video/fake-audio clip and a
+fake-video/real-audio clip receive the same output, and per-modality
+attribution is impossible by construction.
 
 \textbf{Consistency and localization.} SyncNet~\cite{chung2016syncnet}-style
 synchronization was exploited for anomaly-based detection~\cite{feng2023avanomaly},
 but consistency methods detect \emph{mismatch} without attributing which stream
 is fake and fail on fully synthetic clips whose fake streams are mutually
-consistent. LAV-DF~\cite{cai2022lavdf} and AV-Deepfake1M~\cite{cai2023avdeepfake1m}
-introduced temporal forgery localization, but localization is usually joint
-over modalities and cross-dataset generalization is under-reported.
+consistent. LAV-DF~\cite{cai2022lavdf} and
+AV-Deepfake1M~\cite{cai2023avdeepfake1m} introduced content-driven temporal
+forgery localization; BA-TFD+~\cite{cai2023batfdplus} and
+UMMAFormer~\cite{zhang2023ummaformer} are the strongest published localizers,
+and DiMoDif~\cite{koutlis2024dimodif} exploits speech-perception
+discrepancies between the modalities for detection and localization.
+Localization, however, is usually predicted \emph{jointly} over modalities
+rather than per stream, and cross-dataset generalization of localizers is
+under-reported.
 
 \textbf{Proxy-forgery training.} Self-Blended Images~\cite{shiohara2022sbi} and
 Face X-ray~\cite{li2020facexray} showed that synthesizing blending artifacts
 from pristine images generalizes better than training on generator outputs; the
 anti-spoofing literature found the same for vocoder
-copy-synthesis~\cite{wang2023vocoded}. Zhou and Lim~\cite{zhou2021joint}
-explored joint audio-visual labels but trained on generator outputs without a
-pretraining stage.
+copy-synthesis~\cite{wang2023vocoded}, and latent-space
+augmentation~\cite{yan2024lsda} extends the principle to feature space.
+Zhou and Lim~\cite{zhou2021joint} explored joint audio-visual labels but
+trained on generator outputs without a pretraining stage. No prior work
+extends the proxy-forgery principle to the \emph{multimodal} setting in which
+all four authenticity quadrants---and crucially a real-but-desynchronized
+state---are manufactured from pristine data.
+
+\textbf{Benchmarks and in-the-wild evaluation.} Standardized evaluation has
+matured through DeepfakeBench~\cite{yan2023deepfakebench}, the 1M-Deepfakes
+detection challenge~\cite{cai2024challenge}, and
+Deepfake-Eval-2024~\cite{chandra2025deepfakeeval}. Their shared conclusion is
+that in-domain accuracy is effectively saturated while cross-generator and
+in-the-wild performance remains the open problem---which is why the
+evaluation protocol of this thesis treats cross-dataset and
+leave-one-generator-out results as first-class evidence rather than
+supplementary material.
 
 \textbf{Research gap.} As summarized in Table~\ref{tab:gap}, no existing method
 simultaneously provides (a) independent per-modality authenticity, (b)
@@ -116,11 +200,11 @@ extends them to close exactly this gap.
 \toprule
 \textbf{Approach} & \textbf{Per-modality} & \textbf{Consistency} & \textbf{Localization} & \textbf{Cross-gen.\ eval} \\
 \midrule
-Unimodal video       & --      & --         & partial    & partial \\
-Unimodal audio       & --      & --         & partial    & partial \\
-AV binary fusion     & --      & partial    & --         & partial \\
-Sync/anomaly based   & --      & \checkmark & partial    & partial \\
-Localization (BA-TFD) & partial & partial   & \checkmark & -- \\
+Unimodal video~\cite{rossler2019faceforensics,haliassos2021lipforensics,nguyen2024laanet} & --      & --         & partial    & partial \\
+Unimodal audio~\cite{jung2022aasist,zhu2024slim}       & --      & --         & partial    & partial \\
+AV binary fusion~\cite{yang2023avoiddf,oorloff2024avff}     & --      & partial    & --         & partial \\
+Sync/anomaly based~\cite{feng2023avanomaly}   & --      & \checkmark & partial    & partial \\
+Localization~\cite{cai2023batfdplus,zhang2023ummaformer,koutlis2024dimodif} & partial & partial   & \checkmark & -- \\
 \textbf{Proposed framework} & \checkmark & \checkmark & \checkmark & \checkmark \\
 \bottomrule
 \end{tabular}

@@ -1,0 +1,56 @@
+% ------------------------------------------------------------------
+% Deployment architecture diagram (TikZ):
+% browser (Next.js UI) -> server-side proxy -> FastAPI inference
+% service on HF Spaces (DAVID-Net-Lite) -> response contract back to
+% the verdict UI (per-modality cards, quadrant, timelines, sync curve).
+% ------------------------------------------------------------------
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  font=\scriptsize,
+  box/.style={draw, rounded corners=2pt, align=center, inner sep=5pt,
+              minimum height=1.0cm, minimum width=2.4cm},
+  user/.style={box, fill=gray!12},
+  ui/.style={box, fill=green!14},
+  api/.style={box, fill=blue!10},
+  model/.style={box, fill=violet!12},
+  outbox/.style={box, fill=yellow!22},
+  arr/.style={-{Stealth[length=2.2mm]}, semithick}
+]
+
+% user
+\node[user, minimum height=1.6cm] (usr) at (0,0)
+  {End user\\(browser)\\uploads clip /\\audio file};
+
+% Next.js tier
+\node[ui, minimum height=2.6cm, minimum width=3.0cm] (next) at (3.9,0)
+  {Next.js web app\\(Vercel)\\[2pt]upload + validation\\server-side proxy\\(rate limit, size cap)};
+
+% FastAPI tier
+\node[api, minimum height=2.6cm, minimum width=3.2cm] (fast) at (8.1,0)
+  {FastAPI service\\(Hugging Face Space,\\Docker)\\[2pt]\texttt{/predict}\\\texttt{/predict-audio}\\ffmpeg decode + face track};
+
+% model
+\node[model, minimum height=1.8cm] (net) at (12.3,0.9)
+  {DAVID-Net-Lite\\(distilled, CPU/GPU)\\null tokens if a\\modality is absent};
+
+% response contract
+\node[outbox, minimum height=1.8cm] (resp) at (12.3,-1.7)
+  {JSON response contract\\$\hat{y}_v,\hat{y}_a$, quadrant,\\$\hat{m}_v(t),\hat{m}_a(t)$, sync curve,\\calibrated confidence + disclaimer};
+
+% verdict UI
+\node[ui, minimum height=2.0cm, minimum width=3.0cm] (verdict) at (3.9,-3.4)
+  {Verdict view\\[2pt]per-modality cards\\quadrant badge\\dual manipulation timeline\\synchronization curve};
+
+% arrows
+\draw[arr] (usr) -- (next);
+\draw[arr] (next) -- node[above]{HTTPS} (fast);
+\draw[arr] (fast.east) -- (net.west);
+\draw[arr] (net.south) -- (resp.north);
+\draw[arr] (resp.south) |- (verdict.east);
+\draw[arr] (verdict.west) -| (usr.south);
+
+% privacy note
+\node[draw=none, align=center, text=gray] at (8.1,-3.4)
+  {uploads processed in memory,\\not retained beyond the request};
+
+\end{tikzpicture}}%

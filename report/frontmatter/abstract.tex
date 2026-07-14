@@ -33,8 +33,18 @@ and LAV-DF, with cross-dataset validation on DFDC and KoDF, using per-modality
 AUC, four-class attribution accuracy, temporal localization average precision,
 calibration, robustness, and fairness metrics.
 
-\todo{Summarize the primary findings in two to three sentences once experiments
-are complete.}
+On the FakeAVCeleb benchmark, the framework attains per-modality AUCs of
+\dummy{0.986} (video) and \dummy{0.991} (audio) with
+\dummy{94.6\%}~four-class attribution accuracy, matching specialized
+unimodal detectors on both streams simultaneously. Under cross-dataset
+evaluation on corpora never seen during training, QACP improves AUC by
+\dummy{+0.065} absolute over the identical architecture without pretraining
+(\dummy{0.838} on DFDC, \dummy{0.851} on KoDF) and by more than
+\dummy{+0.10} over the strongest multimodal baseline, while
+leave-one-generator-out AUC improves from \dummy{0.849} to \dummy{0.920},
+confirming that an embedding space pretrained on synthetically constructed
+quadrants generalizes to unseen generators better than supervised training
+on generator outputs alone.
 
 The findings would be helpful for forensic analysts, fact-checking
 organizations, and online platforms that must not only flag manipulated media

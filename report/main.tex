@@ -37,6 +37,13 @@
 % TODO marker for content to fill in later
 \newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
 
+% DUMMY marker: placeholder value from the draft, to be replaced by a real
+% measured number (traced to results/*.json) before submission. Rendered in
+% blue so no placeholder can be mistaken for a real result. To produce the
+% camera-ready version once real numbers are in, redefine as:
+%   \renewcommand{\dummy}[1]{#1}
+\newcommand{\dummy}[1]{\textcolor{blue}{#1}}
+
 % ------------------- chapter heading: "CHAPTER n" --------------------
 % Matches the template's "CHAPTER 1 / INTRODUCTION" two-line style.
 \makeatletter

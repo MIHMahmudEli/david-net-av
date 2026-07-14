@@ -111,8 +111,19 @@ results/              (created by runs; results JSONs live here)
   PDF+PNG to `report/figures/generated/`.
 - Experiment orchestrator (`scripts/run_experiments.py`) + multi-seed
   aggregator with bootstrap CIs and LaTeX table body output.
-- Thesis report: OBE 2.1 structure complete, 3 TikZ methodology diagrams,
-  compiles clean (~34 pp). Red `[TODO: …]` markers show every unfilled slot.
+- Thesis report: OBE 2.1 structure complete, 5 TikZ diagrams (DAVID-Net,
+  QACP, pipeline, deployment, Gantt), compiles clean (~53 pp — inside the
+  journal-target 50–60 pp). **Full manuscript draft written with placeholder
+  results:** every placeholder number is wrapped in `\dummy{…}` (renders
+  blue); replace each with the measured value from `results/*.json`, then
+  `\renewcommand{\dummy}[1]{#1}` in `main.tex` for camera-ready. The
+  generated figures currently come from `--demo` mode — regenerate from real
+  results. Red `[TODO: …]` markers remain only for facts nobody can invent
+  (external examiner, defense date, editorial acknowledgement, team
+  contribution split). Bibliography now ~62 entries incl. 2024–2025 SOTA
+  (AVFF, LSDA, LAA-Net, ASVspoof 5, SpoofCeleb, UMMAFormer, DiMoDif,
+  Deepfake-Eval-2024, EU AI Act…); before submission add 2–4 citations from
+  the target journal's 2026 issues (see `docs/08_journal_shortlist.md`).
 - API: /predict (silent-clip aware), /predict-audio, Dockerfile for HF Space.
 
 **NOT yet done:** real datasets (access pending), any real training run,
@@ -212,7 +223,7 @@ Every unfinished slot is marked `\todo{...}` (red). Search for them:
 | Ch.3 ablation table | `results/ablation.json` (fill `cross_dataset_auc`!) |
 | Ch.3 figures | `\includegraphics{generated/results_roc}` etc. — files: results_roc, results_reliability, results_confusion, results_robustness, results_ablation, results_localization (all PDF in `report/figures/generated/`) |
 | Abstract + Conclusion TODOs | 2–3 sentences of headline numbers once Table 3.1/3.2 exist |
-| Planning WBS dates + Gantt | ask the team for semester dates; Gantt as TikZ (offered, not yet built) |
+| Planning WBS dates + Gantt | TikZ Gantt built (`report/figures/fig_gantt.tex`) with draft dates in blue; shift bars + WBS dates to the official semester calendar |
 | Approval page | External examiner name + defense date + supervisor rank |
 | Author Contributions | adjust drafted division of work with the team |
 | Economic Decision TODOs | GPU-hours from W&B / power draw measured on the Spark |
@@ -237,7 +248,8 @@ delete it.
    See docs/05.
 5. **Next.js UI** — scaffold per `ui/README.md` (upload → verdict cards →
    dual timeline → sync curve; server-side proxy to the Space; disclaimers).
-6. **Gantt chart** (TikZ, in Planning front-matter) once dates are known.
+6. **Gantt chart** — drafted in TikZ with placeholder dates; align to the
+   official semester calendar.
 7. **LoRA Phase-B finetune** (only the best config; docs/07 §2) — optional but
    strengthens final numbers.
 8. **Paper manuscript** — the report chapters are written journal-style on

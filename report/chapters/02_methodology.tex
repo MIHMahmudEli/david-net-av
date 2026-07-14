@@ -62,17 +62,39 @@ four quadrants reachable, including FVFA clips whose two fake streams are
 mutually consistent.
 
 \textbf{Encoders.} The video branch extracts aligned face and mouth crops and
-encodes them with a self-supervised VideoMAE backbone into a spatio-temporal
-token sequence $V \in \mathbb{R}^{L_v \times d}$. The audio branch encodes the
-raw 16\,kHz waveform with WavLM~\cite{chen2022wavlm} into
-$A \in \mathbb{R}^{L_a \times d}$. Encoders are largely frozen; only adapters
-and the fusion layers are trained heavily.
+encodes them with a self-supervised VideoMAE~\cite{tong2022videomae} backbone
+(ViT-B, 16-frame tubelets) into a spatio-temporal token sequence
+$V \in \mathbb{R}^{L_v \times d}$. The mouth-region crop is encoded by the
+same backbone through a shared trunk, since lip dynamics carry the strongest
+manipulation and synchronization cues~\cite{haliassos2021lipforensics}. The
+audio branch encodes the raw 16\,kHz waveform with
+WavLM~\cite{chen2022wavlm} into $A \in \mathbb{R}^{L_a \times d}$, where one
+audio token covers 20\,ms of signal. Both backbones are self-supervised:
+they were pretrained without forgery labels, so their features are not
+biased toward any particular generator---a prerequisite for the
+generator-free pretraining strategy of Section~\ref{sec:qacp}. Encoders are
+largely frozen; their outputs are projected to a common width $d{=}256$ by
+lightweight adapters, and only the adapters, fusion transformer, and heads
+are trained heavily. Freezing also enables the cached-feature regime of
+Section~\ref{sec:data}: each clip passes through the expensive backbones
+exactly once.
 
 \textbf{Synchronization--consistency module.} Short overlapping windows of $V$
-and $A$ are projected into a shared space and trained with an InfoNCE
-contrastive objective in which temporally aligned real windows are positives.
-The module outputs a per-window agreement score $s_t$ and a pooled consistency
-embedding $z_c$.
+and $A$ (0.6\,s, stride 0.2\,s) are projected into a shared space by window
+encoders $g_v, g_a$ and trained with an InfoNCE~\cite{oord2018infonce}
+contrastive objective in which temporally aligned windows of genuine (RVRA)
+clips are positives and all misaligned or cross-clip windows in the batch are
+negatives:
+\begin{equation}
+  \mathcal{L}_{sync} = -\sum_{t} \log
+  \frac{\exp\!\big(\langle g_v(V_t), g_a(A_t)\rangle / \tau\big)}
+       {\sum_{t'} \exp\!\big(\langle g_v(V_t), g_a(A_{t'})\rangle / \tau\big)},
+\end{equation}
+with temperature $\tau{=}0.07$. This generalizes
+SyncNet~\cite{chung2016syncnet}-style supervision into the embedding space of
+the detector itself. The module outputs a per-window agreement score
+$s_t = \cos\big(g_v(V_t), g_a(A_t)\big)$---exposed to the user as the
+synchronization curve---and a pooled consistency embedding $z_c$.
 
 \textbf{Disentangled cross-modal fusion.} A cross-modal transformer produces
 pooled authenticity embeddings $z_v, z_a$ and the consistency embedding $z_c$.
@@ -96,17 +118,28 @@ with graceful degradation instead of undefined behavior.
 \textbf{Multi-task heads and objective.} Four heads consume the disentangled
 representations: video authenticity $H_v([z_v; z_c])$, audio authenticity
 $H_a([z_a; z_c])$, quadrant $H_{quad}([z_v; z_a; z_c])$, and per-frame
-localization $H_{loc}$. The total Stage-1 objective is
+localization $H_{loc}$, which predicts $\hat{m}_v(t)$ and $\hat{m}_a(t)$ from
+the token sequences before pooling. Each head is a two-layer MLP with GELU
+activation and dropout 0.1. The quadrant head is deliberately redundant with
+the two binary heads: it acts as a consistency regularizer and provides the
+single four-way attribution presented to end users, while the binary heads
+provide the calibrated per-modality probabilities. The total Stage-1
+objective is
 \begin{equation}
   \mathcal{L} = \lambda_1 \mathcal{L}_v + \lambda_2 \mathcal{L}_a
   + \lambda_3 \mathcal{L}_{quad} + \lambda_4 \mathcal{L}_{loc}
   + \lambda_5 \mathcal{L}_{sync} + \lambda_6 \mathcal{L}_{dis},
 \end{equation}
-where $\mathcal{L}_v, \mathcal{L}_a$ are focal binary cross-entropy losses,
-$\mathcal{L}_{quad}$ is cross-entropy, $\mathcal{L}_{loc}$ is frame-level
-binary cross-entropy against manipulated-interval masks, and
+where $\mathcal{L}_v, \mathcal{L}_a$ are focal~\cite{lin2017focal} binary
+cross-entropy losses ($\gamma{=}2$) that counteract the strong class
+imbalance of deepfake corpora, $\mathcal{L}_{quad}$ is cross-entropy,
+$\mathcal{L}_{loc}$ is frame-level binary cross-entropy against
+manipulated-interval masks (whole-clip fakes reduce to an all-ones mask), and
 $\mathcal{L}_{sync}$ is the contrastive synchronization loss applied to genuine
-(RVRA) samples.
+(RVRA) samples only, so that fake or mismatched pairs are never pulled
+together. The loss weights $\lambda_{1..6} = (1.0, 1.0, 0.5, 0.5, 0.3, 0.1)$
+were fixed on the validation split and are ablated in
+Chapter~\ref{ch:results}.
 
 \subsection{Quadrant-Aware Contrastive Pretraining (QACP)}
 \label{sec:qacp}
@@ -149,6 +182,20 @@ pseudo-MISMATCH & real audio swapped from another clip & mismatch $\neq$ fake \\
 \end{tabular}
 \end{table}
 
+The three constructions are deliberately generator-agnostic.
+\emph{Vocoder copy-synthesis}~\cite{wang2023vocoded} re-synthesizes the
+genuine speech waveform through a neural vocoder: linguistic content, speaker
+identity, and prosody are preserved, so the only learnable signal is the
+synthesis artifact itself. \emph{Self-blended faces}~\cite{shiohara2022sbi}
+blend a transformed copy of a face back onto itself, reproducing the boundary,
+color-mismatch, and frequency artifacts common to face-swapping pipelines
+without invoking any face-swap generator. \emph{Cross-clip mismatch} replaces
+the audio track with genuine speech from a different clip of a different
+speaker, optionally with a random temporal offset. Because every pseudo-class
+is derived from the same pristine clip population, the pretraining
+distribution contains no generator fingerprint that a downstream model could
+shortcut on.
+
 The MISMATCH class is the disentanglement forcing function: both streams remain
 genuinely real while synchronization is broken, so the authenticity heads must
 answer ``real'' while the consistency embedding flags disagreement. Three
@@ -164,12 +211,84 @@ same batch:
 Because each space is supervised to be invariant to the other factors, the
 factorization itself performs disentanglement.
 
+\subsection{Training Procedure and Hyperparameters}
+\label{sec:training}
+
+Training proceeds in two stages on cached encoder features.
+\textbf{Stage~0 (QACP)} pretrains the adapters, fusion transformer, and the
+three projection heads with $\mathcal{L}_{\text{QACP}}$ on pseudo-quadrant
+batches sampled uniformly over the five pseudo-classes.
+\textbf{Stage~1} warm-starts from the Stage-0 weights and optimizes the full
+multi-task objective on labeled data; batches are balanced over generator
+$\times$ quadrant with a weighted sampler so that no single manipulation
+family dominates the gradient signal. Modality dropout ($p{=}0.15$) is active
+in both stages. Optimization uses AdamW~\cite{loshchilov2019adamw} with
+cosine learning-rate decay and BF16 mixed precision. An optional Phase-B
+refinement unfreezes the top backbone layers with low-rank
+adapters~\cite{hu2022lora} for the best configuration only. The complete
+hyperparameter set is given in Table~\ref{tab:hyperparams}; every value is
+recorded in the committed configuration files
+(\texttt{configs/qacp.yaml}, \texttt{configs/david\_net.yaml}), and every
+experiment is repeated with three random seeds $\{42, 43, 44\}$.
+
+\begin{table}[h]
+\centering
+\caption{Training hyperparameters for both stages.}
+\label{tab:hyperparams}
+\small
+\begin{tabular}{lll}
+\toprule
+\textbf{Hyperparameter} & \textbf{Stage 0 (QACP)} & \textbf{Stage 1 (multi-task)} \\
+\midrule
+Optimizer                & AdamW & AdamW \\
+Peak learning rate       & $3\times10^{-4}$ & $1\times10^{-4}$ \\
+Weight decay             & 0.05 & 0.05 \\
+LR schedule              & cosine, 5\% warm-up & cosine, 5\% warm-up \\
+Batch size               & 128 & 64 \\
+Epochs                   & \dummy{30} & \dummy{25} \\
+Precision                & BF16 & BF16 \\
+Fusion transformer       & 4 layers, 8 heads, $d{=}256$ & same (warm-started) \\
+SupCon temperature       & 0.1 & --- \\
+InfoNCE temperature      & --- & 0.07 \\
+Modality dropout $p$     & 0.15 & 0.15 \\
+Focal loss $\gamma$      & --- & 2.0 \\
+Loss weights $\lambda_{1..6}$ & --- & $(1.0, 1.0, 0.5, 0.5, 0.3, 0.1)$ \\
+Clip length / frame rate & 3.2\,s @ 25\,fps & 3.2\,s @ 25\,fps \\
+Seeds                    & 42, 43, 44 & 42, 43, 44 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Explainability.} For qualitative verification and end-user
+transparency, Grad-CAM~\cite{selvaraju2017gradcam} saliency is computed on
+the video branch and spectrogram saliency on the audio branch; these maps
+accompany the temporal localization output in the deployed interface when
+explanation is requested.
+
 \subsection{Deployment Architecture}
-The complete framework is deployed as a two-tier system: a FastAPI inference
-service hosting a lightweight DAVID-Net variant on Hugging Face Spaces, and a
-Next.js web interface that presents per-modality verdicts, quadrant
-attribution, temporal manipulation timelines, and the synchronization curve to
-end users.
+The complete framework is deployed as a two-tier system, shown in
+Figure~\ref{fig:deployment}: a FastAPI inference service hosting a
+lightweight DAVID-Net variant (\emph{DAVID-Net-Lite}, distilled from the full
+model) in a Docker container on Hugging Face Spaces, and a Next.js web
+interface that presents per-modality verdicts, quadrant attribution, temporal
+manipulation timelines, and the synchronization curve to end users. The API
+exposes \texttt{/predict} for video (with silent-clip awareness: when no
+usable speech is present the audio verdict is suppressed rather than
+guessed) and \texttt{/predict-audio} for audio-only files, exercising the
+missing-modality path of Section~\ref{sec:davidnet}. Uploads are processed
+in memory and never retained; every response carries calibrated
+probabilities and an explicit ``probabilistic, not proof'' disclaimer.
+
+\begin{figure}[t]
+  \centering
+  \input{figures/fig_deployment}
+  \caption{Deployment architecture. A Next.js application (Vercel) proxies
+  uploads to a FastAPI inference service on Hugging Face Spaces running the
+  distilled DAVID-Net-Lite; the JSON response contract carries per-modality
+  probabilities, quadrant attribution, localization timelines, and the
+  synchronization curve back to the verdict view.}
+  \label{fig:deployment}
+\end{figure}
 
 \section{Data Collection}
 \label{sec:data}
@@ -188,28 +307,43 @@ identical splits, which is the accepted evaluation standard in this field.
 \subsection{Description of the Datasets}
 Table~\ref{tab:datasets} lists the datasets used.
 FakeAVCeleb~\cite{khalid2021fakeavceleb} provides native four-quadrant labels
-and is the primary training set. AV-Deepfake1M~\cite{cai2023avdeepfake1m} and
-LAV-DF~\cite{cai2022lavdf} drive the temporal-localization task.
-DFDC~\cite{dolhansky2020dfdc} and KoDF are reserved exclusively for
-cross-dataset evaluation. ASVspoof~\cite{wang2020asvspoof} strengthens the
-audio branch. All datasets are obtained under their respective end-user license
-agreements.
+over roughly 500 real and 19{,}500 manipulated clips of 500 celebrities and
+is the primary training set; its manipulations combine face swapping
+(Faceswap, FSGAN), lip-sync reenactment (Wav2Lip), and cloned speech
+(SV2TTS), giving natural leave-one-generator-out partitions. Its severe class
+imbalance (approximately 9:1 fake-to-real, skewed across quadrants) motivates
+the focal loss and the generator-balanced sampler of
+Section~\ref{sec:training}. AV-Deepfake1M~\cite{cai2023avdeepfake1m}
+(over one million clips of 2{,}068 subjects with LLM-driven, word-level
+content manipulations) and LAV-DF~\cite{cai2022lavdf} (136{,}304 clips with
+content-driven partial forgeries) drive the temporal-localization task, since
+both provide manipulated-interval annotations.
+DFDC~\cite{dolhansky2020dfdc} (over 100{,}000 clips of 3{,}426 consenting
+actors) and KoDF~\cite{kwon2021kodf} (a large-scale Korean corpus of 403
+subjects) are reserved \emph{exclusively} for cross-dataset evaluation; KoDF
+additionally probes language and demographic shift.
+DF-TIMIT~\cite{korshunov2018dftimit} serves as a third, low-resolution
+cross-dataset probe. ASVspoof 2019/2021~\cite{wang2020asvspoof} strengthens
+and separately evaluates the audio branch through the missing-modality path.
+All datasets are obtained under their respective end-user license
+agreements, and no raw media is redistributed.
 
 \begin{table}[h]
 \centering
 \caption{Datasets used in this study.}
 \label{tab:datasets}
 \small
-\begin{tabular}{llll}
+\begin{tabular}{lllll}
 \toprule
-\textbf{Dataset} & \textbf{Modality} & \textbf{Labels} & \textbf{Role} \\
+\textbf{Dataset} & \textbf{Modality} & \textbf{Scale} & \textbf{Labels} & \textbf{Role} \\
 \midrule
-FakeAVCeleb   & A+V & 4-quadrant           & train + in-domain test \\
-AV-Deepfake1M & A+V & clip + localization   & train + localization \\
-LAV-DF        & A+V & localized forgeries   & localization \\
-DFDC          & A+V & binary                & cross-dataset test only \\
-KoDF          & A+V & binary                & cross-dataset test only \\
-ASVspoof 2019/21 & A & bona fide / spoof    & audio-branch auxiliary \\
+FakeAVCeleb   & A+V & $\sim$20k clips, 500 ids & 4-quadrant           & train + in-domain test \\
+AV-Deepfake1M & A+V & $>$1M clips, 2{,}068 ids & clip + localization   & train + localization \\
+LAV-DF        & A+V & 136k clips, 153 ids & localized forgeries   & localization \\
+DFDC          & A+V & $>$100k clips, 3{,}426 ids & binary                & cross-dataset test only \\
+KoDF          & A+V & $>$200k clips, 403 ids & binary                & cross-dataset test only \\
+DF-TIMIT      & A+V & 620 clips, 32 ids & binary                & cross-dataset test only \\
+ASVspoof 2019/21 & A & $>$180k utterances & bona fide / spoof    & audio-branch auxiliary \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -235,17 +369,57 @@ service, is shown in Figure~\ref{fig:pipeline}.
   \label{fig:pipeline}
 \end{figure}
 
+\subsection{Split Protocol and Evaluation Metrics}
+\label{sec:metrics}
+
+Three split families are constructed and committed to version control.
+\emph{Subject-disjoint splits} (70/15/15 by identity) ensure that no person
+appears in both training and test data, eliminating identity leakage---a
+known inflator of deepfake benchmark scores. \emph{Leave-one-generator-out
+(LOGO) splits} hold out every clip produced by one manipulation method
+(e.g., Wav2Lip) and test exclusively on it, measuring cross-generator
+generalization within a dataset. \emph{Cross-dataset evaluation} trains on
+FakeAVCeleb and AV-Deepfake1M only and tests on DFDC, KoDF, and DF-TIMIT
+without any adaptation.
+
+Evaluation metrics follow standard practice in the field. Per-modality
+detection quality is measured by the area under the ROC curve (AUC), the
+equal error rate (EER), and macro-averaged F1 (never bare accuracy, given
+the 9:1 class imbalance). Attribution uses four-class quadrant accuracy and
+macro-F1. Temporal localization is scored by average precision at
+intersection-over-union thresholds (AP@IoU $\in \{0.5, 0.75, 0.95\}$)
+following the AV-Deepfake1M protocol~\cite{cai2023avdeepfake1m}.
+Trustworthiness of the reported confidences is quantified by the expected
+calibration error (ECE) with 15 bins, with temperature scaling on the
+validation split~\cite{guo2017calibration}. Robustness is reported as AUC
+under controlled degradations (Gaussian blur, resolution loss, H.264-style
+quantization, and additive audio noise at decreasing SNR), and fairness as
+the maximum subgroup AUC gap across gender and apparent skin-tone groups.
+Statistical rigor is ensured through three-seed runs (mean $\pm$ standard
+deviation), bootstrap 95\% confidence intervals (1{,}000 resamples), and
+DeLong tests~\cite{delong1988} with Holm--Bonferroni correction for AUC
+comparisons against baselines.
+
+\subsection{Baselines and Implementation}
+Baselines span all three detector families under identical splits and
+preprocessing: unimodal video (Xception~\cite{rossler2019faceforensics},
+LipForensics~\cite{haliassos2021lipforensics}, and a frame-level CNN
+reference), unimodal audio (RawNet2~\cite{tak2021rawnet2},
+AASIST~\cite{jung2022aasist}, and a spectrogram CNN reference), and
+audio-visual fusion (MDS~\cite{chugh2020mds}, AVoiD-DF~\cite{yang2023avoiddf},
+and AVFF~\cite{oorloff2024avff}); localization is compared against
+BA-TFD+~\cite{cai2023batfdplus} and UMMAFormer~\cite{zhang2023ummaformer}.
+Published implementations are used where available and re-evaluated on the
+committed test manifests, so every number in Chapter~\ref{ch:results} is
+produced under one protocol.
+
 Experiments are implemented in PyTorch and executed on an NVIDIA DGX Spark
-system (GB10 Grace--Blackwell, 128\,GB unified memory) using BF16 precision and
-a cached-feature training regime. Evaluation uses per-modality AUC, EER,
-macro-F1, four-class quadrant accuracy, localization AP@IoU, expected
-calibration error, robustness curves under compression and noise, and fairness
-gaps across demographic subgroups; statistical rigor is ensured through
-three-seed runs, bootstrap confidence intervals, and DeLong tests. Baselines
-include Xception~\cite{rossler2019faceforensics},
-LipForensics~\cite{haliassos2021lipforensics}, RawNet2~\cite{tak2021rawnet2},
-AASIST~\cite{jung2022aasist}, MDS~\cite{chugh2020mds}, and
-AVoiD-DF~\cite{yang2023avoiddf}, evaluated under identical splits.
+system (GB10 Grace--Blackwell, 128\,GB unified memory) using BF16 precision
+and the cached-feature training regime. The full experiment matrix---QACP
+pretraining, Stage-1 training, all ablations, and three seeds---is driven by
+a single orchestration script, and results are aggregated into LaTeX table
+bodies programmatically, so tables cannot silently drift from the underlying
+result files.
 
 \section{Professional Code of Ethical Issues}
 \label{sec:ethics}
@@ -281,22 +455,31 @@ the request, and the model card documents intended use and limitations.
 
 Two alternative strategies were compared for the experimental infrastructure.
 \textbf{Alternative A (cloud GPU rental)}: training on rented A100-class
-instances at current market rates, with an estimated total of
-\todo{X}~GPU-hours across all runs, ablations, and seeds. \textbf{Alternative B
+instances at current market rates (approximately
+\dummy{US\$1.80--2.50}~per GPU-hour), with an estimated total of
+\dummy{420}~GPU-hours across all runs, ablations, and seeds, i.e.\ roughly
+\dummy{US\$800--1{,}050} plus storage and egress. \textbf{Alternative B
 (owned DGX Spark workstation)}: a one-time hardware cost with negligible
 marginal cost per experiment. Because the experimental plan requires 15--20
 full training runs plus continuous development iteration, the owned-hardware
 alternative amortizes favorably within a single semester and removes the risk
 of budget-driven experiment truncation; it was therefore selected. The
 cached-feature training regime further reduces compute cost by amortizing the
-expensive encoder forward passes into a one-time preprocessing step.
+expensive encoder forward passes into a one-time preprocessing step: after
+caching, one Stage-1 training run completes in approximately
+\dummy{6}~hours, and the entire ablation matrix (\dummy{10} configurations
+$\times$ 3 seeds) in approximately \dummy{190}~GPU-hours.
 
 For real-world deployment, the cost breakdown of the proposed solution is
 deliberately minimal: the demonstration model is served from a free-tier
-Hugging Face Space (CPU) with an optional GPU upgrade
-(\todo{quote current rate}); the web interface is hosted on Vercel's free
-tier; and the heavyweight model can be self-hosted on the same DGX Spark
-workstation at an estimated \todo{X}~W average power draw. A platform-scale
-adopter would instead face inference costs of approximately
-\todo{estimate}~per thousand clips on commodity cloud GPUs, which the
-lightweight distilled variant is specifically designed to reduce.
+Hugging Face Space (CPU) with an optional GPU upgrade (T4-class, approximately
+\dummy{US\$0.60}~per hour at current rates); the web interface is hosted on
+Vercel's free tier; and the heavyweight model can be self-hosted on the same
+DGX Spark workstation at an estimated \dummy{170}\,W average power draw
+during inference (\dummy{240}\,W during training), corresponding to roughly
+\dummy{1.0}~kWh per full-day inference workload. A platform-scale adopter
+would instead face inference costs of approximately
+\dummy{US\$0.40--0.90}~per thousand 10-second clips on commodity cloud GPUs
+(measured DAVID-Net-Lite throughput of approximately \dummy{14}~clips per
+second on a T4-class device), which the lightweight distilled variant is
+specifically designed to reduce.

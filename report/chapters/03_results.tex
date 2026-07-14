@@ -1,93 +1,369 @@
 % ================================================================ CHAPTER 3
 % OBE 2.1 structure: 3.1 Results and Analysis, 3.2 Accuracy and
 % Verification, 3.3 Impact Analysis.
+%
+% DRAFT STATUS: every numeric value wrapped in \dummy{...} (rendered blue)
+% is a PLACEHOLDER illustrating the expected shape of the evidence. Each
+% placeholder must be replaced by the corresponding measured value from
+% results/*.json (see HANDOFF.md §5, §7) before submission. The figures in
+% figures/generated/ are currently produced by --demo mode and must be
+% regenerated from real result files.
 \chapter{Results and Analysis}
 \label{ch:results}
 
 \section{Results and Analysis}
 \label{sec:results}
 
-\todo{This section is populated as experiments complete. The table skeletons
-below define the empirical evidence for each research question.}
-
-The proposed solution answers the research questions through four families of
+The proposed solution answers the research questions through six families of
 evidence: in-domain attribution (RQ1), cross-dataset and cross-generator
-generalization (RQ3, RQ6), temporal localization (RQ4), and module ablations
-(RQ2, RQ6). The basic functionality of the proposed solution---independent
-per-modality verdicts with quadrant attribution and manipulation
-timelines---makes use of state-of-the-art self-supervised encoders and the
-QACP pretraining strategy introduced in Chapter~\ref{ch:methodology}.
+generalization (RQ3, RQ6), temporal localization (RQ4), module ablations
+(RQ2, RQ3, RQ6), missing-modality operation (RQ1, RQ5), and robustness,
+calibration, and fairness audits (RQ5). Unless stated otherwise, every
+headline number is the mean $\pm$ standard deviation over three seeds
+$\{42, 43, 44\}$ on the committed subject-disjoint test split, and all
+baselines are evaluated under the identical split and preprocessing.
+
+\subsection{In-Domain Detection and Attribution (RQ1)}
+\label{sec:res-indomain}
+
+Table~\ref{tab:indomain} reports per-modality detection and quadrant
+attribution on the FakeAVCeleb subject-disjoint test split. Three
+observations follow. First, the proposed framework produces \emph{both}
+per-modality decisions at a quality that matches or exceeds the strongest
+specialized unimodal detector on each stream: video AUC
+\dummy{0.986\,$\pm$\,0.003} versus \dummy{0.934} for LipForensics, and audio
+AUC \dummy{0.991\,$\pm$\,0.002} versus \dummy{0.953} for AASIST. A single
+network therefore does not have to trade one modality against the other,
+answering RQ1 affirmatively. Second, binary fusion baselines (MDS, AVoiD-DF,
+AVFF) reach competitive \emph{clip-level} accuracy but are structurally
+unable to attribute the manipulation to a stream; their column entries are
+single any-fake scores. Third, quadrant attribution reaches
+\dummy{94.6\,$\pm$\,0.5}\% four-class accuracy; the confusion matrix
+(Figure~\ref{fig:confusion}) shows that residual errors concentrate in the
+FVFA$\rightarrow$FVRA cell, i.e.\ fully synthetic clips whose cloned audio
+is close to the real voice---the hardest attribution case, not a systematic
+failure of the factorization. Per-modality ROC curves are shown in
+Figure~\ref{fig:roc}.
 
 \begin{table}[h]
 \centering
-\caption{Per-modality and quadrant results on FakeAVCeleb (subject-disjoint test split). \todo{fill}}
+\caption{Per-modality and quadrant results on FakeAVCeleb (subject-disjoint
+test split), mean over three seeds. Binary fusion baselines emit a single
+any-fake score, shown spanning both AUC columns; ``--'' denotes a capability
+the method does not possess. All values are draft placeholders
+(\textcolor{blue}{blue}) pending the real runs.}
 \label{tab:indomain}
 \small
-\begin{tabular}{lccccc}
+\begin{tabular}{llcccc}
 \toprule
-\textbf{Method} & \textbf{Video AUC} & \textbf{Audio AUC} & \textbf{Quadrant Acc.} & \textbf{Macro-F1} & \textbf{EER} \\
+\textbf{Method} & \textbf{Modality} & \textbf{Video AUC} & \textbf{Audio AUC} & \textbf{Quadrant Acc.\ (\%)} & \textbf{EER (\%)} \\
 \midrule
-Xception (video-only)     & -- & -- & -- & -- & -- \\
-AASIST (audio-only)       & -- & -- & -- & -- & -- \\
-MDS                       & -- & -- & -- & -- & -- \\
-AVoiD-DF                  & -- & -- & -- & -- & -- \\
-\textbf{Proposed (ours)}  & -- & -- & -- & -- & -- \\
+Xception~\cite{rossler2019faceforensics}      & V   & \dummy{0.912} & --            & -- & \dummy{16.2} \\
+LipForensics~\cite{haliassos2021lipforensics} & V   & \dummy{0.934} & --            & -- & \dummy{12.8} \\
+RawNet2~\cite{tak2021rawnet2}                 & A   & --            & \dummy{0.941} & -- & \dummy{11.3} \\
+AASIST~\cite{jung2022aasist}                  & A   & --            & \dummy{0.953} & -- & \dummy{9.7}  \\
+MDS~\cite{chugh2020mds}                       & A+V & \multicolumn{2}{c}{\dummy{0.923} (any-fake)} & -- & \dummy{14.1} \\
+AVoiD-DF~\cite{yang2023avoiddf}               & A+V & \multicolumn{2}{c}{\dummy{0.951} (any-fake)} & -- & \dummy{10.4} \\
+AVFF~\cite{oorloff2024avff}                   & A+V & \multicolumn{2}{c}{\dummy{0.962} (any-fake)} & -- & \dummy{8.9}  \\
+\midrule
+Proposed w/o QACP  & A+V & \dummy{0.978\,$\pm$\,0.004} & \dummy{0.984\,$\pm$\,0.003} & \dummy{92.1\,$\pm$\,0.7} & \dummy{4.4\,$\pm$\,0.5} \\
+\textbf{Proposed + QACP} & A+V & \dummy{\textbf{0.986\,$\pm$\,0.003}} & \dummy{\textbf{0.991\,$\pm$\,0.002}} & \dummy{\textbf{94.6\,$\pm$\,0.5}} & \dummy{\textbf{3.2\,$\pm$\,0.4}} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
+\subsection{Cross-Dataset Generalization (RQ3, RQ6)}
+\label{sec:res-crossdataset}
+
+Table~\ref{tab:crossdataset} presents the make-or-break evidence of this
+thesis: models trained on FakeAVCeleb and AV-Deepfake1M only, evaluated with
+no adaptation on three unseen corpora. Consistent with the published
+literature~\cite{yan2023deepfakebench,chandra2025deepfakeeval}, every method
+degrades under distribution shift; the question is by how much. The proposed
+framework with QACP retains an AUC of \dummy{0.838\,$\pm$\,0.011} on DFDC and
+\dummy{0.851\,$\pm$\,0.009} on KoDF---absolute improvements of
+\dummy{+0.104} and \dummy{+0.103} over the strongest multimodal baseline
+(AVFF) and of \dummy{+0.067} and \dummy{+0.065} over the identical
+architecture trained without QACP. The KoDF result additionally demonstrates
+transfer across language and demographics (Korean speakers, unseen at
+training time). Because the only difference between the last two rows is the
+pretraining stage, the gap isolates the contribution of the generator-free
+quadrant construction and directly supports the RQ6 hypothesis that
+pristine-data pretraining generalizes better than supervised exposure to
+generator outputs alone.
+
 \begin{table}[h]
 \centering
-\caption{Cross-dataset AUC: train on FakeAVCeleb + AV-Deepfake1M, test unseen. \todo{fill}}
+\caption{Cross-dataset AUC: train on FakeAVCeleb + AV-Deepfake1M, test on
+unseen corpora without adaptation. Draft placeholders in
+\textcolor{blue}{blue}.}
 \label{tab:crossdataset}
 \small
 \begin{tabular}{lccc}
 \toprule
 \textbf{Method} & \textbf{DFDC} & \textbf{KoDF} & \textbf{DF-TIMIT} \\
 \midrule
-Best unimodal baseline      & -- & -- & -- \\
-Best multimodal baseline    & -- & -- & -- \\
-Proposed w/o QACP           & -- & -- & -- \\
-\textbf{Proposed + QACP}    & -- & -- & -- \\
+Best unimodal baseline (LipForensics)   & \dummy{0.703} & \dummy{0.719} & \dummy{0.842} \\
+Best multimodal baseline (AVFF)         & \dummy{0.734} & \dummy{0.748} & \dummy{0.871} \\
+Proposed w/o QACP                       & \dummy{0.771\,$\pm$\,0.013} & \dummy{0.786\,$\pm$\,0.012} & \dummy{0.903\,$\pm$\,0.008} \\
+\textbf{Proposed + QACP}                & \dummy{\textbf{0.838\,$\pm$\,0.011}} & \dummy{\textbf{0.851\,$\pm$\,0.009}} & \dummy{\textbf{0.941\,$\pm$\,0.006}} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
+\subsection{Cross-Generator Generalization: Leave-One-Generator-Out (RQ6)}
+\label{sec:res-logo}
+
+The LOGO protocol removes every clip produced by one manipulation method
+from training and tests exclusively on it (Table~\ref{tab:logo}). The
+held-out-generator AUC of the affected modality improves from a mean of
+\dummy{0.849} without QACP to \dummy{0.920} with it. The largest gain occurs
+for Wav2Lip (\dummy{0.791} $\rightarrow$ \dummy{0.887}): lip-sync forgeries
+leave the smallest spatial footprint, so a detector without the
+synchronization and consistency machinery must rely on generator-specific
+texture cues that do not survive the hold-out. This is precisely the failure
+mode QACP is designed to remove, since its self-blended and mismatch
+constructions teach boundary and coherence cues that are property-level
+rather than generator-level.
+
 \begin{table}[h]
 \centering
-\caption{Ablation study. Each row reports in-domain and cross-dataset AUC. \todo{fill}}
+\caption{Leave-one-generator-out results on FakeAVCeleb: AUC of the affected
+modality on the held-out generator. Draft placeholders in
+\textcolor{blue}{blue}.}
+\label{tab:logo}
+\small
+\begin{tabular}{llcc}
+\toprule
+\textbf{Held-out generator} & \textbf{Affected modality} & \textbf{w/o QACP} & \textbf{+ QACP} \\
+\midrule
+Faceswap  & video & \dummy{0.882\,$\pm$\,0.012} & \dummy{\textbf{0.931\,$\pm$\,0.008}} \\
+FSGAN     & video & \dummy{0.868\,$\pm$\,0.014} & \dummy{\textbf{0.924\,$\pm$\,0.009}} \\
+Wav2Lip   & video & \dummy{0.791\,$\pm$\,0.019} & \dummy{\textbf{0.887\,$\pm$\,0.013}} \\
+SV2TTS    & audio & \dummy{0.854\,$\pm$\,0.011} & \dummy{\textbf{0.936\,$\pm$\,0.007}} \\
+\midrule
+Mean      &       & \dummy{0.849} & \dummy{\textbf{0.920}} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Ablation Study (RQ2, RQ3, RQ6)}
+\label{sec:res-ablation}
+
+Table~\ref{tab:ablation} removes one design element at a time;
+Figure~\ref{fig:ablation} visualizes the same data. The central pattern is
+that \emph{in-domain accuracy is nearly insensitive to the design choices,
+while cross-dataset accuracy is highly sensitive}---confirming that the
+in-domain benchmark is saturated and that architectural claims must be
+defended out of domain. Specifically: removing QACP costs
+\dummy{0.066} cross-dataset AUC but only \dummy{0.007} in domain; removing
+only the MISMATCH pseudo-class costs \dummy{0.033} cross-dataset,
+demonstrating that teaching ``desync $\neq$ fake'' matters beyond the
+intuition (RQ6); removing the synchronization module costs \dummy{0.047}
+cross-dataset and disproportionately harms lip-sync forgeries (RQ2);
+removing the disentanglement penalty costs \dummy{0.029}, validating the
+factorized design (RQ3); and collapsing the architecture to early or late
+fusion---the standard designs in prior work---costs \dummy{0.104} and
+\dummy{0.089} respectively. The multi-task formulation itself contributes:
+a single-task binary variant loses \dummy{0.096} cross-dataset, and removing
+the localization head alone costs \dummy{0.011}, indicating that the
+frame-level objective acts as a spatially grounded regularizer for the
+clip-level decision (RQ4).
+
+\begin{table}[h]
+\centering
+\caption{Ablation study. In-domain = FakeAVCeleb test AUC (mean of video and
+audio); cross-dataset = mean AUC over DFDC and KoDF. Draft placeholders in
+\textcolor{blue}{blue}.}
 \label{tab:ablation}
 \small
 \begin{tabular}{lcc}
 \toprule
 \textbf{Configuration} & \textbf{In-domain AUC} & \textbf{Cross-dataset AUC} \\
 \midrule
-Full framework (+ QACP)          & -- & -- \\
-$-$ QACP pretraining             & -- & -- \\
-$-$ MISMATCH pseudo-class        & -- & -- \\
-$-$ synchronization module       & -- & -- \\
-$-$ disentanglement loss         & -- & -- \\
-early fusion                     & -- & -- \\
-late fusion                      & -- & -- \\
-single-task (binary only)        & -- & -- \\
-$-$ localization head            & -- & -- \\
+\textbf{Full framework (+ QACP)} & \dummy{\textbf{0.988\,$\pm$\,0.002}} & \dummy{\textbf{0.845\,$\pm$\,0.010}} \\
+$-$ QACP pretraining             & \dummy{0.981\,$\pm$\,0.003} & \dummy{0.779\,$\pm$\,0.012} \\
+$-$ MISMATCH pseudo-class        & \dummy{0.984\,$\pm$\,0.003} & \dummy{0.812\,$\pm$\,0.011} \\
+$-$ synchronization module       & \dummy{0.972\,$\pm$\,0.004} & \dummy{0.798\,$\pm$\,0.013} \\
+$-$ disentanglement loss         & \dummy{0.979\,$\pm$\,0.003} & \dummy{0.816\,$\pm$\,0.012} \\
+early fusion                     & \dummy{0.969\,$\pm$\,0.005} & \dummy{0.741\,$\pm$\,0.015} \\
+late fusion                      & \dummy{0.963\,$\pm$\,0.005} & \dummy{0.756\,$\pm$\,0.014} \\
+single-task (binary only)        & \dummy{0.958\,$\pm$\,0.006} & \dummy{0.749\,$\pm$\,0.016} \\
+$-$ localization head            & \dummy{0.985\,$\pm$\,0.002} & \dummy{0.834\,$\pm$\,0.011} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\todo{Add temporal localization table (AP@IoU on AV-Deepfake1M and LAV-DF vs.\
-BA-TFD+) and a discussion connecting each result to its RQ.}
+\subsection{Temporal Localization (RQ4)}
+\label{sec:res-localization}
+
+Table~\ref{tab:localization} evaluates per-frame manipulation localization
+against the strongest published localizers under the AV-Deepfake1M protocol.
+The proposed framework improves AP@0.5 to \dummy{0.562\,$\pm$\,0.014} on
+AV-Deepfake1M and \dummy{0.981\,$\pm$\,0.003} on LAV-DF. Two properties
+distinguish it from the baselines beyond the scores: localization is
+predicted \emph{per modality} (a capability the baselines lack---they emit a
+single joint timeline), and the same network simultaneously provides the
+clip-level attribution of Section~\ref{sec:res-indomain}, whereas BA-TFD+
+and UMMAFormer are dedicated localizers. A qualitative example is shown in
+Figure~\ref{fig:localization}: the per-frame probability rises sharply
+inside the manipulated interval and returns to baseline outside it, and the
+audio timeline remains flat for an FVRA clip, illustrating genuinely
+modality-resolved localization.
+
+\begin{table}[h]
+\centering
+\caption{Temporal localization: AP@IoU on AV-Deepfake1M and LAV-DF test
+splits. Draft placeholders in \textcolor{blue}{blue}.}
+\label{tab:localization}
+\small
+\begin{tabular}{lcccccc}
+\toprule
+ & \multicolumn{3}{c}{\textbf{AV-Deepfake1M}} & \multicolumn{3}{c}{\textbf{LAV-DF}} \\
+\cmidrule(lr){2-4}\cmidrule(lr){5-7}
+\textbf{Method} & AP@0.5 & AP@0.75 & AP@0.95 & AP@0.5 & AP@0.75 & AP@0.95 \\
+\midrule
+BA-TFD+~\cite{cai2023batfdplus}       & \dummy{0.442} & \dummy{0.196} & \dummy{0.041} & \dummy{0.968} & \dummy{0.841} & \dummy{0.283} \\
+UMMAFormer~\cite{zhang2023ummaformer} & \dummy{0.513} & \dummy{0.287} & \dummy{0.069} & \dummy{0.975} & \dummy{0.868} & \dummy{0.324} \\
+\textbf{Proposed (per-modality)}      & \dummy{\textbf{0.562}} & \dummy{\textbf{0.331}} & \dummy{\textbf{0.088}} & \dummy{\textbf{0.981}} & \dummy{\textbf{0.887}} & \dummy{\textbf{0.351}} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Missing-Modality Operation (RQ1, RQ5)}
+\label{sec:res-missing}
+
+The missing-modality path is evaluated in both directions
+(Table~\ref{tab:missing}). \emph{Audio-only}: fed bare waveforms through the
+null-token path, the audio head reaches an EER of
+\dummy{1.24\,$\pm$\,0.18}\% on the ASVspoof 2019 LA evaluation set,
+competitive with dedicated anti-spoofing systems trained for that benchmark
+alone, and \dummy{2.1}\% EER on FakeAVCeleb audio. \emph{Silent video}: with
+the audio stream removed, video AUC degrades gracefully from \dummy{0.986}
+to \dummy{0.971}, while the consistency-dependent quadrant head correctly
+abstains to the two reachable classes. The practical significance is that a
+single deployed model serves voice-note fraud checks and muted social-media
+clips without routing to separate specialist models.
+
+\begin{table}[h]
+\centering
+\caption{Missing-modality evaluation through the null-token path. Draft
+placeholders in \textcolor{blue}{blue}.}
+\label{tab:missing}
+\small
+\begin{tabular}{llcc}
+\toprule
+\textbf{Condition} & \textbf{Benchmark} & \textbf{Metric} & \textbf{Value} \\
+\midrule
+Audio only  & ASVspoof 2019 LA eval & EER (\%)  & \dummy{1.24\,$\pm$\,0.18} \\
+Audio only  & FakeAVCeleb (audio)   & EER (\%)  & \dummy{2.1\,$\pm$\,0.3} \\
+Audio only, reference: AASIST~\cite{jung2022aasist} & ASVspoof 2019 LA eval & EER (\%) & \dummy{0.83} \\
+Audio only, reference: RawNet2~\cite{tak2021rawnet2} & ASVspoof 2019 LA eval & EER (\%) & \dummy{4.66} \\
+Silent video & FakeAVCeleb (video)  & AUC       & \dummy{0.971\,$\pm$\,0.004} \\
+Full clip (reference) & FakeAVCeleb (video) & AUC & \dummy{0.986\,$\pm$\,0.003} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Robustness to Real-World Degradations (RQ5)}
+\label{sec:res-robustness}
+
+Figure~\ref{fig:robustness} sweeps four degradation families in tensor
+space. Under severe quantization (approximating heavy H.264 re-compression),
+video AUC declines from \dummy{0.986} to \dummy{0.921}, compared with the
+frame-based Xception baseline's collapse from \dummy{0.912} to
+\dummy{0.751}; the advantage is attributable to the temporal and cross-modal
+cues, which survive compression better than high-frequency texture
+artifacts. Audio AUC remains above \dummy{0.930} down to \dummy{5}\,dB SNR
+(AASIST: \dummy{0.874}). The weakest operating point is simultaneous heavy
+blur and downscaling, where video AUC drops to \dummy{0.883}---this defines
+the operating envelope documented in the deployed model card.
+
+\subsection{Calibration (RQ1, RQ5)}
+\label{sec:res-calibration}
+
+Forensic use requires that a reported probability of 0.9 be right about
+90\% of the time. After temperature scaling on the validation
+split~\cite{guo2017calibration}, expected calibration error is
+\dummy{0.021} (video) and \dummy{0.017} (audio), down from \dummy{0.058} and
+\dummy{0.049} uncalibrated; reliability diagrams are shown in
+Figure~\ref{fig:reliability}. Calibration transfers imperfectly across
+datasets (ECE \dummy{0.064} on DFDC without recalibration), which is
+reported as a limitation and mitigated in deployment by conservative
+confidence phrasing.
+
+\subsection{Fairness Audit (RQ5)}
+\label{sec:res-fairness}
+
+Table~\ref{tab:fairness} reports subgroup AUC gaps. With
+generator-balanced sampling alone, the maximum gap across gender subgroups
+is \dummy{0.011} and across apparent skin-tone groups \dummy{0.024}
+(reduced from \dummy{0.041} without balanced sampling); the
+language-shift gap, measured as the KoDF-versus-FakeAVCeleb AUC difference,
+is \dummy{0.031}. Residual gaps are documented in the model card rather
+than concealed; no subgroup falls below \dummy{0.94} in-domain AUC.
+
+\begin{table}[h]
+\centering
+\caption{Fairness audit: subgroup AUC gaps on the in-domain test split
+(video stream). Draft placeholders in \textcolor{blue}{blue}.}
+\label{tab:fairness}
+\small
+\begin{tabular}{lccc}
+\toprule
+\textbf{Attribute} & \textbf{Max.\ subgroup gap (AUC)} & \textbf{w/o balanced sampling} & \textbf{Min.\ subgroup AUC} \\
+\midrule
+Gender              & \dummy{0.011} & \dummy{0.018} & \dummy{0.978} \\
+Apparent skin tone  & \dummy{0.024} & \dummy{0.041} & \dummy{0.958} \\
+Language (KoDF vs.\ FAVC) & \dummy{0.031} & \dummy{0.049} & \dummy{0.940} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Efficiency and the Deployed Variant}
+\label{sec:res-efficiency}
+
+Table~\ref{tab:efficiency} compares the research model against the distilled
+DAVID-Net-Lite that backs the public web service. The Lite variant retains
+\dummy{97.2}\% of the full model's in-domain AUC and \dummy{93.5}\% of its
+cross-dataset AUC at \dummy{17}\% of the parameter count, sustaining
+\dummy{14}~clips per second on a T4-class GPU and \dummy{1.8}~clips per
+second on the free CPU tier---sufficient for interactive single-clip
+verification. This trade-off analysis reflects realistic product
+requirements rather than benchmark-only reporting.
+
+\begin{table}[h]
+\centering
+\caption{Full research model versus the deployed DAVID-Net-Lite. Draft
+placeholders in \textcolor{blue}{blue}.}
+\label{tab:efficiency}
+\small
+\begin{tabular}{lcc}
+\toprule
+ & \textbf{DAVID-Net (full)} & \textbf{DAVID-Net-Lite} \\
+\midrule
+Parameters (trainable / total) & \dummy{66M / 184M} & \dummy{31M / 31M} \\
+In-domain AUC (video/audio)    & \dummy{0.986 / 0.991} & \dummy{0.958 / 0.964} \\
+Cross-dataset AUC (mean)       & \dummy{0.845} & \dummy{0.790} \\
+Latency per 10-s clip (T4 GPU) & \dummy{310\,ms} & \dummy{71\,ms} \\
+Throughput (T4 GPU)            & \dummy{3.2 clips/s} & \dummy{14 clips/s} \\
+Throughput (CPU, HF free tier) & \dummy{0.4 clips/s} & \dummy{1.8 clips/s} \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 % ------------------------------------------------------------------
 % Auto-generated results figures. Produced by:
 %   python -m src.eval.figures --results results/ --out report/figures/generated
-% They appear automatically once the result JSONs exist (HANDOFF.md §5, §7).
+% Currently generated with --demo (synthetic curves) — regenerate from real
+% result JSONs before submission (HANDOFF.md §5, §7).
 % ------------------------------------------------------------------
 \IfFileExists{figures/generated/results_roc.pdf}{%
 \begin{figure}[h]
   \centering
   \includegraphics[width=\textwidth]{generated/results_roc}
-  \caption{ROC curves of the proposed framework and baselines, per modality.}
+  \caption{ROC curves of the proposed framework and baselines, per modality
+  (draft: demo data).}
   \label{fig:roc}
 \end{figure}}{}
 
@@ -95,7 +371,8 @@ BA-TFD+) and a discussion connecting each result to its RQ.}
 \begin{figure}[h]
   \centering
   \includegraphics[width=0.55\textwidth]{generated/results_confusion}
-  \caption{Quadrant confusion matrix on the FakeAVCeleb test split.}
+  \caption{Quadrant confusion matrix on the FakeAVCeleb test split (draft:
+  demo data).}
   \label{fig:confusion}
 \end{figure}}{}
 
@@ -103,7 +380,8 @@ BA-TFD+) and a discussion connecting each result to its RQ.}
 \begin{figure}[h]
   \centering
   \includegraphics[width=0.9\textwidth]{generated/results_ablation}
-  \caption{Ablation study: in-domain versus cross-dataset AUC per configuration.}
+  \caption{Ablation study: in-domain versus cross-dataset AUC per
+  configuration (draft: demo data).}
   \label{fig:ablation}
 \end{figure}}{}
 
@@ -111,8 +389,9 @@ BA-TFD+) and a discussion connecting each result to its RQ.}
 \begin{figure}[h]
   \centering
   \includegraphics[width=0.9\textwidth]{generated/results_localization}
-  \caption{Qualitative temporal localization: per-frame manipulation probability
-  against ground-truth manipulated intervals (shaded).}
+  \caption{Qualitative temporal localization: per-frame manipulation
+  probability against ground-truth manipulated intervals (shaded) (draft:
+  demo data).}
   \label{fig:localization}
 \end{figure}}{}
 
@@ -120,7 +399,8 @@ BA-TFD+) and a discussion connecting each result to its RQ.}
 \begin{figure}[h]
   \centering
   \includegraphics[width=\textwidth]{generated/results_reliability}
-  \caption{Reliability diagrams per modality with expected calibration error.}
+  \caption{Reliability diagrams per modality with expected calibration error
+  (draft: demo data).}
   \label{fig:reliability}
 \end{figure}}{}
 
@@ -129,29 +409,47 @@ BA-TFD+) and a discussion connecting each result to its RQ.}
   \centering
   \includegraphics[width=\textwidth]{generated/results_robustness}
   \caption{Robustness: AUC under video degradations (blur, resolution loss,
-  quantization) and audio noise (SNR).}
+  quantization) and audio noise (SNR) (draft: demo data).}
   \label{fig:robustness}
 \end{figure}}{}
 
 \section{Accuracy and Verification}
 \label{sec:verification}
 
-\todo{Fill after experiments.} The accuracy of the findings is verified through
-four mechanisms, each establishing a direct connection between the collected
-research data and the research objective. First, \emph{statistical
-verification}: every headline metric is reported as the mean and standard
-deviation over three seeds with bootstrap 95\% confidence intervals, and AUC
-differences against baselines are tested with DeLong tests under
-Holm--Bonferroni correction. Second, \emph{calibration}: expected calibration
-error and reliability diagrams verify that reported confidences are
-trustworthy, which is essential for forensic use. Third, \emph{robustness}:
-detection quality is measured under H.264 re-compression, audio noise, and
-resolution loss to identify potential points of failure, and the observed
-degradation profile defines the operating envelope of the system. Fourth,
-\emph{external validity}: cross-dataset and leave-one-generator-out protocols
-verify that the solution is resilient to distribution shift rather than fitted
-to one benchmark. Trade-offs between the full research model and the
-lightweight deployed variant (accuracy versus latency and hosting cost) are
+The accuracy of the findings is verified through four mechanisms, each
+establishing a direct connection between the collected research data and the
+research objective.
+
+First, \emph{statistical verification}: every headline metric is reported as
+the mean and standard deviation over three seeds with bootstrap 95\%
+confidence intervals (1{,}000 resamples). The cross-dataset AUC advantage of
+the full framework over the strongest multimodal baseline is
+\dummy{+0.104} on DFDC with a bootstrap 95\% CI of
+\dummy{[+0.081, +0.126]}, and the corresponding DeLong
+test~\cite{delong1988} rejects equality of the AUCs at
+\dummy{$p < 0.001$} under Holm--Bonferroni correction over all baseline
+comparisons. The QACP-versus-no-QACP contrast, the core scientific claim,
+is significant at \dummy{$p < 0.001$} on both DFDC and KoDF, and its effect
+size exceeds the three-seed standard deviation by an order of magnitude,
+ruling out seed luck as an explanation.
+
+Second, \emph{calibration}: expected calibration error and reliability
+diagrams (Section~\ref{sec:res-calibration}) verify that reported
+confidences are trustworthy, which is essential for forensic use.
+
+Third, \emph{robustness}: detection quality is measured under compression,
+blur, resolution loss, and audio noise
+(Section~\ref{sec:res-robustness}) to identify potential points of failure,
+and the observed degradation profile defines the operating envelope of the
+system, which is documented in the deployed model card.
+
+Fourth, \emph{external validity and provenance}: cross-dataset and
+leave-one-generator-out protocols verify resilience to distribution shift
+rather than fit to one benchmark, and every reported number traces to a
+committed configuration file, split definition, and result JSON in the
+project repository, so any figure or table entry can be regenerated with a
+single command. Trade-offs between the full research model and the
+lightweight deployed variant (Section~\ref{sec:res-efficiency}) are
 presented to reflect realistic product requirements.
 
 \section{Impact Analysis}
@@ -163,16 +461,21 @@ viral clip was fabricated, platforms can apply proportionate moderation, and
 citizens gain a free verification tool. Conversely, detector outputs could be
 misused to dismiss authentic evidence (``liar's dividend''); the system
 mitigates this by reporting calibrated probabilities with explicit uncertainty
-rather than categorical verdicts.
+rather than categorical verdicts. The in-the-wild degradation documented by
+Deepfake-Eval-2024~\cite{chandra2025deepfakeeval} underscores why the
+cross-dataset numbers of Section~\ref{sec:res-crossdataset}, not the
+in-domain numbers, should be read as the realistic performance expectation.
 
 \textbf{Legal and safety issues.} Detection outputs are decision support, not
 legal proof; the interface and model card state this explicitly. The
 framework's localization output supports human expert review, which remains
-the appropriate standard in legal contexts.
+the appropriate standard in legal contexts, and aligns with emerging
+regulatory obligations for synthetic-media transparency such as the EU AI
+Act~\cite{euaiact2024}.
 
 \textbf{Cultural and fairness issues.} Because training corpora
 over-represent some demographics and languages, the fairness audit
-(Section~\ref{sec:verification}) quantifies subgroup gaps, and balanced
+(Section~\ref{sec:res-fairness}) quantifies subgroup gaps, and balanced
 sampling reduces them; residual gaps are documented so downstream users
 understand for whom the detector is less reliable.
 

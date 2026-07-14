@@ -17,15 +17,33 @@ The data collection and analysis process relied on established benchmark
 corpora (FakeAVCeleb, AV-Deepfake1M, LAV-DF) with cross-dataset validation on
 unseen corpora (DFDC, KoDF), unified under a single reproducible manifest
 schema with subject-disjoint and leave-one-generator-out splits.
-\todo{Summarize the principal findings and their significance in one paragraph
-once experiments are complete.} The complete system is released as open-source
-software and deployed as a public web service.
+
+The principal findings are threefold (all values are draft placeholders,
+shown in \textcolor{blue}{blue}, pending the final experimental runs).
+First, a single network can attribute manipulation per modality at the level
+of specialized unimodal detectors---\dummy{0.986} video AUC and
+\dummy{0.991} audio AUC with \dummy{94.6\%} quadrant accuracy on
+FakeAVCeleb---demonstrating that binary detection discards information it
+never needed to discard. Second, the generator-free QACP pretraining is the
+decisive factor for generalization: it contributes \dummy{+0.065} AUC on
+unseen datasets and lifts leave-one-generator-out AUC from \dummy{0.849} to
+\dummy{0.920}, while in-domain accuracy is nearly unchanged---evidence that
+what matters for real-world deployment is learned from the structure of
+manipulation itself rather than from generator fingerprints. Third, the
+ablation study shows that the disentanglement of authenticity from
+consistency evidence, enforced by the MISMATCH pseudo-class, is what allows
+these two capabilities to coexist in one model. The complete system is
+released as open-source software and deployed as a public web service.
 
 \textbf{Limitations.} The framework targets single-subject talking-head
 content; multi-person scenes, overlapping speech, and non-speech audio are out
 of scope. Detection outputs are probabilistic decision support, not proof of
-authenticity. \todo{Add empirical limitations discovered during
-experimentation.}
+authenticity. Empirically, calibration degrades under dataset shift
+(ECE \dummy{0.064} on DFDC without recalibration), performance in the
+combined low-light, low-resolution regime remains the weakest operating
+point (video AUC \dummy{0.883}), and residual fairness gaps of up to
+\dummy{0.024} AUC across apparent skin-tone subgroups persist after
+balanced sampling; these are documented in the deployed model card.
 
 \textbf{Future work.} Future researchers can extend this study toward fully
 generated text-to-video content without a real source subject; continual
