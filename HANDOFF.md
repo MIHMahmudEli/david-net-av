@@ -111,9 +111,12 @@ results/              (created by runs; results JSONs live here)
   PDF+PNG to `report/figures/generated/`.
 - Experiment orchestrator (`scripts/run_experiments.py`) + multi-seed
   aggregator with bootstrap CIs and LaTeX table body output.
-- Thesis report: OBE 2.1 structure complete, 5 TikZ diagrams (DAVID-Net,
-  QACP, pipeline, deployment, Gantt), compiles clean (~53 pp — inside the
-  journal-target 50–60 pp). **Full manuscript draft written with placeholder
+- Thesis report: OBE 2.1 structure complete, 6 TikZ diagrams (DAVID-Net,
+  QACP, sync module, pipeline, deployment, Gantt) + 3 pseudocode algorithms
+  (QACP Stage-0, Stage-1 step, missing-modality inference), compiles clean
+  (~53 pp — inside the journal-target 50–60 pp). Float parameters tuned in
+  main.tex so figures/tables share pages with text (no half-empty float
+  pages); keep new floats as `[htbp]`. **Full manuscript draft written with placeholder
   results:** every placeholder number is wrapped in `\dummy{…}` (renders
   blue); replace each with the measured value from `results/*.json`, then
   `\renewcommand{\dummy}[1]{#1}` in `main.tex` for camera-ready. The

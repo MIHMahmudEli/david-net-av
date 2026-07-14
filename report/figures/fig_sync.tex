@@ -1,0 +1,72 @@
+% ------------------------------------------------------------------
+% Synchronization--consistency module (TikZ):
+% overlapping windows of V and A -> window encoders g_v/g_a -> pairwise
+% similarity matrix (InfoNCE: temporally aligned pairs are positives) ->
+% per-window agreement curve s_t and pooled consistency embedding z_c.
+% ------------------------------------------------------------------
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  font=\scriptsize,
+  arr/.style={-{Stealth[length=2mm]}, semithick},
+  lab/.style={align=center}
+]
+
+% ---- video window strip ----
+\node[anchor=east] at (-0.2, 1.65) {video windows $V_t$};
+\foreach \i in {0,...,5} {
+  \draw[blue!60!black, fill=blue!22]
+    (0.60*\i, 1.42) rectangle +(0.5, 0.46);
+}
+% ---- audio window strip ----
+\node[anchor=east] at (-0.2, 0.25) {audio windows $A_t$};
+\foreach \i in {0,...,5} {
+  \draw[orange!70!black, fill=orange!30]
+    (0.60*\i, 0.02) rectangle +(0.5, 0.46);
+}
+\node[lab, text=gray] at (1.75, -0.55) {0.6\,s windows, stride 0.2\,s};
+
+% ---- window encoders ----
+\node[draw, rounded corners=2pt, fill=violet!14, minimum width=0.9cm] (gv) at (4.7, 1.65) {$g_v$};
+\node[draw, rounded corners=2pt, fill=violet!14, minimum width=0.9cm] (ga) at (4.7, 0.25) {$g_a$};
+\draw[arr] (3.75, 1.65) -- (gv);
+\draw[arr] (3.75, 0.25) -- (ga);
+\node[lab, text=gray] at (4.7, -0.55) {shared\\projection space};
+
+% ---- pairwise similarity matrix (rows = video, cols = audio) ----
+% diagonal = temporally aligned pairs = InfoNCE positives
+\begin{scope}[shift={(6.2,-0.35)}]
+  \foreach \i in {0,...,5} {
+    \foreach \j in {0,...,5} {
+      \ifnum\i=\j
+        \fill[violet!75] (0.34*\j, 0.34*\i) rectangle +(0.30, 0.30);
+      \else
+        \fill[gray!18]   (0.34*\j, 0.34*\i) rectangle +(0.30, 0.30);
+      \fi
+    }
+  }
+  \draw[gray!60] (0,0) rectangle (0.34*5+0.30, 0.34*5+0.30);
+  \node[lab] at (1.0, 2.45) {$\langle g_v(V_t), g_a(A_{t'})\rangle / \tau$};
+  \node[lab, text=gray, align=center] at (1.0, -0.45)
+    {aligned pairs (diagonal)\\= InfoNCE positives};
+\end{scope}
+\draw[arr] (gv.east) -- (6.1, 1.35);
+\draw[arr] (ga.east) -- (6.1, 0.35);
+
+% ---- agreement curve s_t ----
+\begin{scope}[shift={(9.6,-0.1)}]
+  \draw[gray!70, arr] (0,0) -- (2.6,0) node[below, text=black] {$t$};
+  \draw[gray!70, arr] (0,0) -- (0,1.6) node[left, text=black] {$s_t$};
+  \draw[green!45!black, semithick]
+    (0.1,1.25) -- (0.5,1.30) -- (0.9,1.18) -- (1.3,0.45)
+    -- (1.7,0.38) -- (2.1,1.12) -- (2.5,1.22);
+  \fill[gray!25, opacity=0.6] (1.1,0) rectangle (1.9,1.5);
+  \node[lab, text=gray] at (1.5, -0.45) {dip = local desync};
+\end{scope}
+\draw[arr] (8.55, 0.85) -- (9.45, 0.75);
+
+% ---- pooled consistency embedding ----
+\node[draw, rounded corners=2pt, fill=yellow!25, lab] (zc) at (11.0, 2.1)
+  {pool $\rightarrow z_c$\\(consistency\\embedding)};
+\draw[arr] (10.9, 1.55) -- (zc.south);
+
+\end{tikzpicture}}%

@@ -29,10 +29,30 @@
 \usepackage{tocbibind}          % LoF/LoT/Bibliography in the ToC
 \usepackage{tikz}               % architecture diagrams (report/figures/*.tex)
 \usetikzlibrary{positioning, arrows.meta, calc, fit, backgrounds}
+\usepackage{algorithm}          % floating algorithm environment
+\usepackage{algpseudocode}      % pseudocode body (algorithmicx)
 
 \graphicspath{{figures/}}
 \onehalfspacing                 % 1.5 line spacing (template rule)
 \setlength{\parskip}{6pt}       % one-line gap between paragraphs (template rule)
+
+% ------------------- float spacing: kill excess whitespace ------------
+% Let floats share pages with text instead of drifting onto half-empty
+% float pages, and top-align any unavoidable float page.
+\renewcommand{\topfraction}{0.9}
+\renewcommand{\bottomfraction}{0.85}
+\renewcommand{\textfraction}{0.05}
+\renewcommand{\floatpagefraction}{0.75}
+\setcounter{topnumber}{3}
+\setcounter{bottomnumber}{2}
+\setcounter{totalnumber}{5}
+\makeatletter
+\setlength{\@fptop}{0pt}        % float pages start at the top, not centered
+\setlength{\@fpbot}{0pt plus 1fil}
+\makeatother
+\setlength{\intextsep}{10pt plus 2pt minus 2pt}
+\setlength{\textfloatsep}{12pt plus 2pt minus 2pt}
+\setlength{\floatsep}{10pt plus 2pt minus 2pt}
 
 % TODO marker for content to fill in later
 \newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}

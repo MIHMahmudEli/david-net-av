@@ -10,7 +10,7 @@ hosting (Hugging Face Spaces, Vercel) for the deployed system. All dates shown
 in \textcolor{blue}{blue} are draft placeholders to be aligned with the
 official semester calendar and the actual logbook.
 
-\begin{table}[h]
+\begin{table}[htbp]
 \centering
 \caption{Project-Thesis Deliverables and Logbook.}
 \label{tab:wbs}
@@ -36,13 +36,14 @@ Submission and review                  & All members          & \dummy{01--30 Se
 The schedule and the dependencies between tasks are visualized in the Gantt
 chart of Figure~\ref{fig:gantt}.
 
-\begin{figure}[h]
-  \centering
+% Non-floating so the chart sits directly under the WBS table instead of
+% drifting to its own page and leaving whitespace.
+\begin{center}
   \input{figures/fig_gantt}
-  \caption{Gantt chart of the scheduled tasks and their durations (draft
-  schedule; bar positions follow the placeholder dates of
+  \captionof{figure}{Gantt chart of the scheduled tasks and their durations
+  (draft schedule; bar positions follow the placeholder dates of
   Table~\ref{tab:wbs}).}
   \label{fig:gantt}
-\end{figure}
+\end{center}
 
 \clearpage

@@ -45,7 +45,7 @@ is close to the real voice---the hardest attribution case, not a systematic
 failure of the factorization. Per-modality ROC curves are shown in
 Figure~\ref{fig:roc}.
 
-\begin{table}[h]
+\begin{table}[htbp]
 \centering
 \caption{Per-modality and quadrant results on FakeAVCeleb (subject-disjoint
 test split), mean over three seeds. Binary fusion baselines emit a single
@@ -72,6 +72,24 @@ Proposed w/o QACP  & A+V & \dummy{0.978\,$\pm$\,0.004} & \dummy{0.984\,$\pm$\,0.
 \end{tabular}
 \end{table}
 
+\IfFileExists{figures/generated/results_roc.pdf}{%
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.95\textwidth]{generated/results_roc}
+  \caption{ROC curves of the proposed framework and baselines, per modality
+  (draft: demo data).}
+  \label{fig:roc}
+\end{figure}}{}
+
+\IfFileExists{figures/generated/results_confusion.pdf}{%
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.5\textwidth]{generated/results_confusion}
+  \caption{Quadrant confusion matrix on the FakeAVCeleb test split (draft:
+  demo data).}
+  \label{fig:confusion}
+\end{figure}}{}
+
 \subsection{Cross-Dataset Generalization (RQ3, RQ6)}
 \label{sec:res-crossdataset}
 
@@ -92,7 +110,7 @@ quadrant construction and directly supports the RQ6 hypothesis that
 pristine-data pretraining generalizes better than supervised exposure to
 generator outputs alone.
 
-\begin{table}[h]
+\begin{table}[htbp]
 \centering
 \caption{Cross-dataset AUC: train on FakeAVCeleb + AV-Deepfake1M, test on
 unseen corpora without adaptation. Draft placeholders in
@@ -126,7 +144,7 @@ mode QACP is designed to remove, since its self-blended and mismatch
 constructions teach boundary and coherence cues that are property-level
 rather than generator-level.
 
-\begin{table}[h]
+\begin{table}[htbp]
 \centering
 \caption{Leave-one-generator-out results on FakeAVCeleb: AUC of the affected
 modality on the held-out generator. Draft placeholders in
@@ -170,7 +188,7 @@ the localization head alone costs \dummy{0.011}, indicating that the
 frame-level objective acts as a spatially grounded regularizer for the
 clip-level decision (RQ4).
 
-\begin{table}[h]
+\begin{table}[htbp]
 \centering
 \caption{Ablation study. In-domain = FakeAVCeleb test AUC (mean of video and
 audio); cross-dataset = mean AUC over DFDC and KoDF. Draft placeholders in
@@ -194,6 +212,15 @@ $-$ localization head            & \dummy{0.985\,$\pm$\,0.002} & \dummy{0.834\,$
 \end{tabular}
 \end{table}
 
+\IfFileExists{figures/generated/results_ablation.pdf}{%
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.85\textwidth]{generated/results_ablation}
+  \caption{Ablation study: in-domain versus cross-dataset AUC per
+  configuration (draft: demo data).}
+  \label{fig:ablation}
+\end{figure}}{}
+
 \subsection{Temporal Localization (RQ4)}
 \label{sec:res-localization}
 
@@ -211,7 +238,7 @@ inside the manipulated interval and returns to baseline outside it, and the
 audio timeline remains flat for an FVRA clip, illustrating genuinely
 modality-resolved localization.
 
-\begin{table}[h]
+\begin{table}[htbp]
 \centering
 \caption{Temporal localization: AP@IoU on AV-Deepfake1M and LAV-DF test
 splits. Draft placeholders in \textcolor{blue}{blue}.}
@@ -230,6 +257,16 @@ UMMAFormer~\cite{zhang2023ummaformer} & \dummy{0.513} & \dummy{0.287} & \dummy{0
 \end{tabular}
 \end{table}
 
+\IfFileExists{figures/generated/results_localization.pdf}{%
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.85\textwidth]{generated/results_localization}
+  \caption{Qualitative temporal localization: per-frame manipulation
+  probability against ground-truth manipulated intervals (shaded) (draft:
+  demo data).}
+  \label{fig:localization}
+\end{figure}}{}
+
 \subsection{Missing-Modality Operation (RQ1, RQ5)}
 \label{sec:res-missing}
 
@@ -245,7 +282,7 @@ abstains to the two reachable classes. The practical significance is that a
 single deployed model serves voice-note fraud checks and muted social-media
 clips without routing to separate specialist models.
 
-\begin{table}[h]
+\begin{table}[htbp]
 \centering
 \caption{Missing-modality evaluation through the null-token path. Draft
 placeholders in \textcolor{blue}{blue}.}
@@ -279,6 +316,15 @@ artifacts. Audio AUC remains above \dummy{0.930} down to \dummy{5}\,dB SNR
 blur and downscaling, where video AUC drops to \dummy{0.883}---this defines
 the operating envelope documented in the deployed model card.
 
+\IfFileExists{figures/generated/results_robustness.pdf}{%
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.95\textwidth]{generated/results_robustness}
+  \caption{Robustness: AUC under video degradations (blur, resolution loss,
+  quantization) and audio noise (SNR) (draft: demo data).}
+  \label{fig:robustness}
+\end{figure}}{}
+
 \subsection{Calibration (RQ1, RQ5)}
 \label{sec:res-calibration}
 
@@ -292,6 +338,15 @@ datasets (ECE \dummy{0.064} on DFDC without recalibration), which is
 reported as a limitation and mitigated in deployment by conservative
 confidence phrasing.
 
+\IfFileExists{figures/generated/results_reliability.pdf}{%
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.95\textwidth]{generated/results_reliability}
+  \caption{Reliability diagrams per modality with expected calibration error
+  (draft: demo data).}
+  \label{fig:reliability}
+\end{figure}}{}
+
 \subsection{Fairness Audit (RQ5)}
 \label{sec:res-fairness}
 
@@ -303,7 +358,7 @@ language-shift gap, measured as the KoDF-versus-FakeAVCeleb AUC difference,
 is \dummy{0.031}. Residual gaps are documented in the model card rather
 than concealed; no subgroup falls below \dummy{0.94} in-domain AUC.
 
-\begin{table}[h]
+\begin{table}[htbp]
 \centering
 \caption{Fairness audit: subgroup AUC gaps on the in-domain test split
 (video stream). Draft placeholders in \textcolor{blue}{blue}.}
@@ -332,7 +387,7 @@ second on the free CPU tier---sufficient for interactive single-clip
 verification. This trade-off analysis reflects realistic product
 requirements rather than benchmark-only reporting.
 
-\begin{table}[h]
+\begin{table}[htbp]
 \centering
 \caption{Full research model versus the deployed DAVID-Net-Lite. Draft
 placeholders in \textcolor{blue}{blue}.}
@@ -352,66 +407,10 @@ Throughput (CPU, HF free tier) & \dummy{0.4 clips/s} & \dummy{1.8 clips/s} \\
 \end{tabular}
 \end{table}
 
-% ------------------------------------------------------------------
-% Auto-generated results figures. Produced by:
+% Figures are auto-generated by:
 %   python -m src.eval.figures --results results/ --out report/figures/generated
-% Currently generated with --demo (synthetic curves) — regenerate from real
-% result JSONs before submission (HANDOFF.md §5, §7).
-% ------------------------------------------------------------------
-\IfFileExists{figures/generated/results_roc.pdf}{%
-\begin{figure}[h]
-  \centering
-  \includegraphics[width=\textwidth]{generated/results_roc}
-  \caption{ROC curves of the proposed framework and baselines, per modality
-  (draft: demo data).}
-  \label{fig:roc}
-\end{figure}}{}
-
-\IfFileExists{figures/generated/results_confusion.pdf}{%
-\begin{figure}[h]
-  \centering
-  \includegraphics[width=0.55\textwidth]{generated/results_confusion}
-  \caption{Quadrant confusion matrix on the FakeAVCeleb test split (draft:
-  demo data).}
-  \label{fig:confusion}
-\end{figure}}{}
-
-\IfFileExists{figures/generated/results_ablation.pdf}{%
-\begin{figure}[h]
-  \centering
-  \includegraphics[width=0.9\textwidth]{generated/results_ablation}
-  \caption{Ablation study: in-domain versus cross-dataset AUC per
-  configuration (draft: demo data).}
-  \label{fig:ablation}
-\end{figure}}{}
-
-\IfFileExists{figures/generated/results_localization.pdf}{%
-\begin{figure}[h]
-  \centering
-  \includegraphics[width=0.9\textwidth]{generated/results_localization}
-  \caption{Qualitative temporal localization: per-frame manipulation
-  probability against ground-truth manipulated intervals (shaded) (draft:
-  demo data).}
-  \label{fig:localization}
-\end{figure}}{}
-
-\IfFileExists{figures/generated/results_reliability.pdf}{%
-\begin{figure}[h]
-  \centering
-  \includegraphics[width=\textwidth]{generated/results_reliability}
-  \caption{Reliability diagrams per modality with expected calibration error
-  (draft: demo data).}
-  \label{fig:reliability}
-\end{figure}}{}
-
-\IfFileExists{figures/generated/results_robustness.pdf}{%
-\begin{figure}[h]
-  \centering
-  \includegraphics[width=\textwidth]{generated/results_robustness}
-  \caption{Robustness: AUC under video degradations (blur, resolution loss,
-  quantization) and audio noise (SNR) (draft: demo data).}
-  \label{fig:robustness}
-\end{figure}}{}
+% (currently --demo mode) and are placed inside the subsection that
+% discusses each of them.
 
 \section{Accuracy and Verification}
 \label{sec:verification}

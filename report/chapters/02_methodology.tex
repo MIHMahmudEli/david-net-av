@@ -37,7 +37,7 @@ stream $x_a$. The framework predicts:
 \subsection{DAVID-Net Architecture}
 \label{sec:davidnet}
 
-\begin{figure}[t]
+\begin{figure}[htbp]
   \centering
   \input{figures/fig_davidnet}
   \caption{Overview of the proposed DAVID-Net architecture. Blue denotes the
@@ -94,7 +94,23 @@ with temperature $\tau{=}0.07$. This generalizes
 SyncNet~\cite{chung2016syncnet}-style supervision into the embedding space of
 the detector itself. The module outputs a per-window agreement score
 $s_t = \cos\big(g_v(V_t), g_a(A_t)\big)$---exposed to the user as the
-synchronization curve---and a pooled consistency embedding $z_c$.
+synchronization curve---and a pooled consistency embedding $z_c$. The
+mechanism is illustrated in Figure~\ref{fig:sync}: temporally aligned
+window pairs form the diagonal of the pairwise similarity matrix and act as
+InfoNCE positives, and a local dip in the resulting agreement curve marks a
+desynchronized (or lip-synced) segment.
+
+\begin{figure}[htbp]
+  \centering
+  \input{figures/fig_sync}
+  \caption{The synchronization--consistency module. Overlapping windows of
+  the video and audio token sequences are projected by $g_v, g_a$ into a
+  shared space; temporally aligned pairs (matrix diagonal) are InfoNCE
+  positives. The per-window agreement score $s_t$ is exposed to end users
+  as the synchronization curve, and its pooled representation forms the
+  consistency embedding $z_c$.}
+  \label{fig:sync}
+\end{figure}
 
 \textbf{Disentangled cross-modal fusion.} A cross-modal transformer produces
 pooled authenticity embeddings $z_v, z_a$ and the consistency embedding $z_c$.
@@ -152,7 +168,7 @@ generator looks like. Starting from verified-real (RVRA) clips only, five
 pseudo-classes are manufactured (Table~\ref{tab:qacp-classes}); the complete
 two-stage training flow is illustrated in Figure~\ref{fig:qacp}.
 
-\begin{figure}[t]
+\begin{figure}[htbp]
   \centering
   \input{figures/fig_qacp}
   \caption{Quadrant-Aware Contrastive Pretraining (QACP). All four
@@ -164,7 +180,7 @@ two-stage training flow is illustrated in Figure~\ref{fig:qacp}.
   \label{fig:qacp}
 \end{figure}
 
-\begin{table}[h]
+\begin{table}[htbp]
 \centering
 \caption{QACP pseudo-classes constructed from pristine clips.}
 \label{tab:qacp-classes}
@@ -209,7 +225,46 @@ same batch:
   \mathcal{L}_{\text{SupCon}}(z_c;\, \text{sync-state}).
 \end{equation}
 Because each space is supervised to be invariant to the other factors, the
-factorization itself performs disentanglement.
+factorization itself performs disentanglement. The complete Stage-0
+procedure is summarized in Algorithm~\ref{alg:qacp}.
+
+\begin{algorithm}[htbp]
+\caption{Quadrant-Aware Contrastive Pretraining (Stage 0)}
+\label{alg:qacp}
+\begin{algorithmic}[1]
+\Require pristine RVRA clip set $\mathcal{D}_{\text{real}}$; neural vocoder
+  $G_{\text{voc}}$; self-blending transform $T_{\text{SBI}}$; encoder,
+  adapters, and fusion parameters $\theta$; epochs $E_0$
+\Ensure pretrained $\theta$ (warm start for Stage 1)
+\For{$e = 1, \dots, E_0$}
+  \For{each batch $\mathcal{B} \subset \mathcal{D}_{\text{real}}$}
+    \For{each clip $(x_v, x_a) \in \mathcal{B}$}
+      \State $c \sim \mathrm{Uniform}\{\text{RVRA}, \text{RVFA}, \text{FVRA},
+        \text{FVFA}, \text{MISMATCH}\}$
+      \If{$c \in \{\text{RVFA}, \text{FVFA}\}$}
+        \State $x_a \gets G_{\text{voc}}(x_a)$
+        \Comment{vocoder copy-synthesis}
+      \EndIf
+      \If{$c \in \{\text{FVRA}, \text{FVFA}\}$}
+        \State $x_v \gets T_{\text{SBI}}(x_v)$
+        \Comment{self-blended face video}
+      \EndIf
+      \If{$c = \text{MISMATCH}$}
+        \State $x_a \gets$ audio of a different clip in
+          $\mathcal{D}_{\text{real}}$, random offset
+      \EndIf
+    \EndFor
+    \State apply modality dropout with $p = 0.15$ (never both streams)
+    \State $(z_v, z_a, z_c) \gets f_\theta(x_v, x_a)$ for all clips in $\mathcal{B}$
+    \State $\mathcal{L} \gets
+      \mathcal{L}_{\text{SupCon}}(z_v; \text{video-auth}(c)) +
+      \mathcal{L}_{\text{SupCon}}(z_a; \text{audio-auth}(c)) +
+      \mathcal{L}_{\text{SupCon}}(z_c; \text{sync-state}(c))$
+    \State update $\theta$ with AdamW on $\nabla_\theta \mathcal{L}$
+  \EndFor
+\EndFor
+\end{algorithmic}
+\end{algorithm}
 
 \subsection{Training Procedure and Hyperparameters}
 \label{sec:training}
@@ -231,7 +286,7 @@ recorded in the committed configuration files
 (\texttt{configs/qacp.yaml}, \texttt{configs/david\_net.yaml}), and every
 experiment is repeated with three random seeds $\{42, 43, 44\}$.
 
-\begin{table}[h]
+\begin{table}[htbp]
 \centering
 \caption{Training hyperparameters for both stages.}
 \label{tab:hyperparams}
@@ -259,6 +314,40 @@ Seeds                    & 42, 43, 44 & 42, 43, 44 \\
 \end{tabular}
 \end{table}
 
+One optimization step of Stage 1 is given in Algorithm~\ref{alg:stage1}; the
+per-sample loss masking in line~2 is what allows a single network to learn
+from complete clips, audio-only samples, and silent-video samples in the
+same batch.
+
+\begin{algorithm}[htbp]
+\caption{Stage-1 multi-task optimization step of DAVID-Net}
+\label{alg:stage1}
+\begin{algorithmic}[1]
+\Require warm-started parameters $\theta$ (Algorithm~\ref{alg:qacp});
+  labeled manifest with quadrant $q$ and manipulated-interval masks
+  $(m_v, m_a)$; loss weights $\lambda_{1..6}$
+\State sample batch $\mathcal{B}$ with the generator\,$\times$\,quadrant
+  balanced sampler
+\State per sample: drop one stream with $p = 0.15$ (never both); mask the
+  dropped stream's losses; replace its tokens with null tokens and set
+  $z_c \gets \mathbf{0}$
+\State $(z_v, z_a, z_c, s_t, \text{tokens}) \gets f_\theta(\mathcal{B})$
+\State $\hat{y}_v \gets H_v([z_v; z_c])$;\quad
+  $\hat{y}_a \gets H_a([z_a; z_c])$;\quad
+  $\hat{q} \gets H_{quad}([z_v; z_a; z_c])$
+\State $\hat{m}_v(t), \hat{m}_a(t) \gets H_{loc}(\text{tokens})$
+\State $\mathcal{L} \gets
+  \lambda_1\,\mathrm{FocalBCE}(\hat{y}_v, y_v) +
+  \lambda_2\,\mathrm{FocalBCE}(\hat{y}_a, y_a) +
+  \lambda_3\,\mathrm{CE}(\hat{q}, q)$
+\State $\mathcal{L} \gets \mathcal{L} +
+  \lambda_4\,\mathrm{BCE}(\hat{m}, m) +
+  \lambda_5\,\mathcal{L}_{sync}\ \text{(RVRA samples only)} +
+  \lambda_6\,\mathcal{L}_{dis}$
+\State update $\theta$ with AdamW on $\nabla_\theta \mathcal{L}$
+\end{algorithmic}
+\end{algorithm}
+
 \textbf{Explainability.} For qualitative verification and end-user
 transparency, Grad-CAM~\cite{selvaraju2017gradcam} saliency is computed on
 the video branch and spectrogram saliency on the audio branch; these maps
@@ -278,8 +367,34 @@ guessed) and \texttt{/predict-audio} for audio-only files, exercising the
 missing-modality path of Section~\ref{sec:davidnet}. Uploads are processed
 in memory and never retained; every response carries calibrated
 probabilities and an explicit ``probabilistic, not proof'' disclaimer.
+The complete inference path, including the missing-modality handling, is
+given in Algorithm~\ref{alg:inference}.
 
-\begin{figure}[t]
+\begin{algorithm}[htbp]
+\caption{Missing-modality-aware inference}
+\label{alg:inference}
+\begin{algorithmic}[1]
+\Require uploaded media $u$; trained parameters $\theta$; calibration
+  temperatures $(T_v, T_a)$
+\State decode $u$: $x_v \gets$ tracked face and mouth crops (or $\varnothing$
+  if no face / video absent); $x_a \gets$ 16\,kHz mono audio (or
+  $\varnothing$ if silent / audio absent)
+\If{$x_v = \varnothing$ or $x_a = \varnothing$}
+  \State replace the absent stream's tokens with learnable null tokens;
+    $z_c \gets \mathbf{0}$
+\EndIf
+\State $(\hat{y}_v, \hat{y}_a, \hat{q}, \hat{m}_v(t), \hat{m}_a(t), s_t)
+  \gets f_\theta(x_v, x_a)$
+\State temperature-scale: $\hat{y}_v \gets \sigma(\mathrm{logit}(\hat{y}_v)/T_v)$;
+  \ $\hat{y}_a \gets \sigma(\mathrm{logit}(\hat{y}_a)/T_a)$
+\State suppress the verdict, timeline, and sync curve of any absent stream;
+  report $\hat{q}$ only if both streams are present
+\State \Return JSON response: per-modality probabilities, quadrant,
+  timelines, sync curve, disclaimer
+\end{algorithmic}
+\end{algorithm}
+
+\begin{figure}[htbp]
   \centering
   \input{figures/fig_deployment}
   \caption{Deployment architecture. A Next.js application (Vercel) proxies
@@ -328,7 +443,7 @@ and separately evaluates the audio branch through the missing-modality path.
 All datasets are obtained under their respective end-user license
 agreements, and no raw media is redistributed.
 
-\begin{table}[h]
+\begin{table}[htbp]
 \centering
 \caption{Datasets used in this study.}
 \label{tab:datasets}
@@ -359,7 +474,7 @@ leave-one-generator-out (LOGO) splits hold out one manipulation method
 entirely. The end-to-end data pipeline, from raw corpora to the deployed
 service, is shown in Figure~\ref{fig:pipeline}.
 
-\begin{figure}[t]
+\begin{figure}[htbp]
   \centering
   \input{figures/fig_pipeline}
   \caption{The end-to-end data collection and processing pipeline. Encoder
