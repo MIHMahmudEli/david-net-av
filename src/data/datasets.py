@@ -54,7 +54,11 @@ class AVDeepfakeDataset(Dataset):
         return len(self.records)
 
     def _load_tensors(self, rec):
-        """Load video/audio tensors from cache, MP4, or dry-run fallback."""
+        """Load video/audio tensors from cache, MP4, or dry-run fallback.
+
+        Returns: (video, audio) always. Face crops are handled separately
+        via get_faces() when use_faces=True.
+        """
         # 1. Try precomputed feature cache
         if self.shard_root is not None:
             vp = self.shard_root / f"{rec['clip_id']}_video.pt"
@@ -66,19 +70,25 @@ class AVDeepfakeDataset(Dataset):
         if self.root_dir is not None and "rel_path" in rec:
             mp4_path = self.root_dir / rec["rel_path"]
             if mp4_path.exists():
-                from src.data.decode import decode_av_with_faces, decode_av_from_mp4
-                use_faces = getattr(self, "use_faces", False)
-                if use_faces:
-                    faces, mouths, audio, full_frames = decode_av_with_faces(
-                        str(mp4_path), self.n_frames, self.audio_len)
-                    return full_frames, audio, faces, mouths
-                else:
-                    return decode_av_from_mp4(str(mp4_path), self.n_frames, self.audio_len)
+                from src.data.decode import decode_av_from_mp4
+                return decode_av_from_mp4(str(mp4_path), self.n_frames, self.audio_len)
 
         # 3. Dry-run fallback (random tensors)
         video = torch.randn(self.n_frames, 3, 224, 224)
         audio = torch.randn(self.audio_len)
         return video, audio
+
+    def get_faces(self, rec):
+        """Extract face/mouth ROI crops for a record. Only used when use_faces=True."""
+        if not self.use_faces:
+            return None, None
+        if self.root_dir is not None and "rel_path" in rec:
+            mp4_path = self.root_dir / rec["rel_path"]
+            if mp4_path.exists():
+                from src.data.face_preprocess import extract_face_mouth_from_video
+                return extract_face_mouth_from_video(str(mp4_path), self.n_frames)
+        return (torch.randn(self.n_frames, 3, 224, 224),
+                torch.randn(self.n_frames, 3, 96, 96))
 
     def __getitem__(self, i):
         rec = self.records[i]

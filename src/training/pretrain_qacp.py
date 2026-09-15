@@ -39,8 +39,10 @@ def pretrain(cfg):
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # base manifest should contain REAL (RVRA) clips only
+    root_dir = getattr(cfg, "root_dir", None)
     base = AVDeepfakeDataset(cfg.train_manifest, cfg.shard_root, cfg.n_frames, cfg.audio_len,
-                             filt=lambda r: r["video_label"] == 0 and r["audio_label"] == 0)
+                             filt=lambda r: r["video_label"] == 0 and r["audio_label"] == 0,
+                             root_dir=root_dir)
     ds = QACPDataset(base)
     dl = DataLoader(ds, batch_size=cfg.batch_size, shuffle=True,
                     num_workers=cfg.num_workers, collate_fn=collate_qacp)

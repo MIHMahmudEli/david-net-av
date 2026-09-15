@@ -28,7 +28,9 @@ def evaluate(cfg, checkpoint: str, manifest: str) -> dict:
         model.load_state_dict(state["model"])
     model.eval()
 
-    ds = AVDeepfakeDataset(manifest, cfg.shard_root, cfg.n_frames, cfg.audio_len)
+    root_dir = getattr(cfg, "root_dir", None)
+    ds = AVDeepfakeDataset(manifest, cfg.shard_root, cfg.n_frames, cfg.audio_len,
+                           root_dir=root_dir)
     dl = DataLoader(ds, batch_size=cfg.batch_size, shuffle=False,
                     num_workers=cfg.num_workers, collate_fn=collate)
 
