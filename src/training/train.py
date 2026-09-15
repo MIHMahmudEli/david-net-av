@@ -107,13 +107,14 @@ def train(cfg):
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # ─── Data ─────────────────────────────────────────────────────────
+    root_dir = getattr(cfg, "root_dir", None)
     if getattr(cfg, "feature_cache", None):
         from src.data.datasets import CachedFeatureDataset
         train_ds = CachedFeatureDataset(cfg.train_manifest, cfg.feature_cache,
                                         cfg.n_frames, cfg.audio_len)
     else:
         train_ds = AVDeepfakeDataset(cfg.train_manifest, cfg.shard_root,
-                                     cfg.n_frames, cfg.audio_len)
+                                     cfg.n_frames, cfg.audio_len, root_dir=root_dir)
     train_dl = DataLoader(train_ds, batch_size=cfg.batch_size,
                           sampler=BalancedGeneratorSampler(train_ds.records, cfg.batch_size),
                           num_workers=cfg.num_workers, collate_fn=collate)
@@ -122,7 +123,8 @@ def train(cfg):
     val_manifest = getattr(cfg, "val_manifest", None)
     val_dl = None
     if val_manifest and os.path.exists(val_manifest):
-        val_ds = AVDeepfakeDataset(val_manifest, cfg.shard_root, cfg.n_frames, cfg.audio_len)
+        val_ds = AVDeepfakeDataset(val_manifest, cfg.shard_root, cfg.n_frames, cfg.audio_len,
+                                   root_dir=root_dir)
         val_dl = DataLoader(val_ds, batch_size=cfg.batch_size, shuffle=False,
                             num_workers=cfg.num_workers, collate_fn=collate)
         print(f"Validation: {len(val_ds)} clips")
@@ -133,9 +135,40 @@ def train(cfg):
         state = torch.load(cfg.init_from, map_location=device)
         missing, unexpected = model.load_state_dict(state["model"], strict=False)
         print(f"init_from {cfg.init_from}: {len(missing)} missing, {len(unexpected)} unexpected keys")
+
+    # Gradient checkpointing on video backbone (docs/02_architecture.md §9)
+    if getattr(cfg, "gradient_checkpointing", True):
+        if hasattr(model, "video_encoder") and hasattr(model.video_encoder, "backbone"):
+            try:
+                model.video_encoder.backbone.gradient_checkpointing_enable()
+                print("Gradient checkpointing enabled on video backbone")
+            except Exception:
+                pass
+
     weights = LossWeights(**cfg.loss_weights)
-    opt = torch.optim.AdamW(
-        [p for p in model.parameters() if p.requires_grad], lr=cfg.lr, weight_decay=cfg.weight_decay
+
+    # Separate param groups: heads/fusion vs encoder adapters
+    enc_params = []
+    other_params = []
+    for name, p in model.named_parameters():
+        if not p.requires_grad:
+            continue
+        if "video_encoder" in name or "audio_encoder" in name:
+            enc_params.append(p)
+        else:
+            other_params.append(p)
+
+    lr_enc = getattr(cfg, "lr_encoder", 1e-5)
+    opt = torch.optim.AdamW([
+        {"params": other_params, "lr": cfg.lr, "weight_decay": cfg.weight_decay},
+        {"params": enc_params, "lr": lr_enc, "weight_decay": cfg.weight_decay},
+    ])
+
+    # Cosine schedule with warmup (docs/02_architecture.md §9)
+    warmup_epochs = getattr(cfg, "warmup_epochs", 2)
+    total_steps = cfg.epochs * 1000  # approximate; updated per-epoch
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        opt, T_max=cfg.epochs - warmup_epochs, eta_min=cfg.lr * 0.01
     )
     scaler = torch.amp.GradScaler("cuda", enabled=(device == "cuda"))
 
@@ -172,9 +205,26 @@ def train(cfg):
     # ─── Training loop ────────────────────────────────────────────────
     steps = 0
     model.train()
+    # Store initial LRs for warmup
+    for pg in opt.param_groups:
+        pg["initial_lr"] = pg["lr"]
 
     try:
         for epoch in range(start_epoch, cfg.epochs):
+            # Warmup: linear LR increase for first N epochs
+            if epoch < warmup_epochs:
+                warmup_factor = (epoch + 1) / warmup_epochs
+                for pg in opt.param_groups:
+                    pg["lr"] = pg["initial_lr"] * warmup_factor
+            elif epoch == warmup_epochs:
+                # Switch to cosine schedule
+                scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                    opt, T_max=cfg.epochs - warmup_epochs, eta_min=cfg.lr * 0.01
+                )
+                scheduler.step()
+            else:
+                scheduler.step()
+
             epoch_loss = 0.0
             epoch_steps = 0
 

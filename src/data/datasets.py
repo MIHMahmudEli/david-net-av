@@ -39,11 +39,13 @@ def segments_to_mask(segments, length: int, duration: float) -> torch.Tensor:
 
 class AVDeepfakeDataset(Dataset):
     def __init__(self, manifest: str, shard_root: Optional[str] = None,
-                 n_frames: int = 16, audio_len: int = 64000, filt=None):
+                 n_frames: int = 16, audio_len: int = 64000, filt=None,
+                 root_dir: Optional[str] = None):
         self.records = load_manifest(manifest)
         if filt is not None:
             self.records = [r for r in self.records if filt(r)]
         self.shard_root = Path(shard_root) if shard_root else None
+        self.root_dir = Path(root_dir) if root_dir else None
         self.n_frames = n_frames
         self.audio_len = audio_len
 
@@ -51,13 +53,22 @@ class AVDeepfakeDataset(Dataset):
         return len(self.records)
 
     def _load_tensors(self, rec):
-        """Load preprocessed (video, audio) tensors; fall back to random for dry runs."""
+        """Load video/audio tensors from cache, MP4, or dry-run fallback."""
+        # 1. Try precomputed feature cache
         if self.shard_root is not None:
             vp = self.shard_root / f"{rec['clip_id']}_video.pt"
             ap = self.shard_root / f"{rec['clip_id']}_audio.pt"
             if vp.exists() and ap.exists():
                 return torch.load(vp), torch.load(ap)
-        # dry-run fallback so the pipeline is runnable end-to-end without data
+
+        # 2. Decode from MP4 using rel_path
+        if self.root_dir is not None and "rel_path" in rec:
+            mp4_path = self.root_dir / rec["rel_path"]
+            if mp4_path.exists():
+                from src.data.decode import decode_av_from_mp4
+                return decode_av_from_mp4(str(mp4_path), self.n_frames, self.audio_len)
+
+        # 3. Dry-run fallback (random tensors)
         video = torch.randn(self.n_frames, 3, 224, 224)
         audio = torch.randn(self.audio_len)
         return video, audio

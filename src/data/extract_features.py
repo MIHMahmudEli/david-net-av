@@ -26,7 +26,8 @@ from src.utils.config import load_config
 
 
 @torch.no_grad()
-def extract(cfg, manifest: str, out_dir: str, batch_size: int = 4, overwrite: bool = False):
+def extract(cfg, manifest: str, out_dir: str, batch_size: int = 4, overwrite: bool = False,
+            root_dir: str = None):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -34,10 +35,11 @@ def extract(cfg, manifest: str, out_dir: str, batch_size: int = 4, overwrite: bo
     venc = build_video_encoder(cfg).to(device).eval()
     aenc = build_audio_encoder(cfg).to(device).eval()
 
-    ds = AVDeepfakeDataset(manifest, cfg.shard_root, cfg.n_frames, cfg.audio_len)
+    ds = AVDeepfakeDataset(manifest, cfg.shard_root, cfg.n_frames, cfg.audio_len,
+                           root_dir=root_dir)
     dl = torch.utils.data.DataLoader(
         ds, batch_size=batch_size, shuffle=False, num_workers=cfg.num_workers,
-        collate_fn=lambda b: b,  # keep list of dicts; we batch manually below
+        collate_fn=lambda b: b,
     )
 
     n_done, n_skip = 0, 0
@@ -66,9 +68,10 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--batch-size", type=int, default=4)
     ap.add_argument("--overwrite", action="store_true")
+    ap.add_argument("--root-dir", default=None, help="Root dir to resolve rel_path in manifest")
     args = ap.parse_args()
     cfg = load_config(args.config)
-    extract(cfg, args.manifest, args.out, args.batch_size, args.overwrite)
+    extract(cfg, args.manifest, args.out, args.batch_size, args.overwrite, args.root_dir)
 
 
 if __name__ == "__main__":
