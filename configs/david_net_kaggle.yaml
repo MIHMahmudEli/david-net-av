@@ -13,9 +13,9 @@ use_sync: true
 use_disentangle: true
 compose_quadrant: false
 
-# --- backbones (fallback for T4 VRAM) ---
-video_backbone: fallback
-audio_backbone: fallback
+# --- backbones (real SSL encoders) ---
+video_backbone: videomae
+audio_backbone: wavlm
 video_model_name: MCG-NJU/videomae-base
 audio_model_name: microsoft/wavlm-base-plus
 freeze_blocks: 6

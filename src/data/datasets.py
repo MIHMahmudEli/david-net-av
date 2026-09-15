@@ -104,10 +104,51 @@ class CachedFeatureDataset(AVDeepfakeDataset):
         return torch.load(vp), torch.load(ap)
 
 
+class BalancedGeneratorSampler(torch.utils.data.Sampler):
+    """Sampler that ensures each batch has balanced representation across generators.
+
+    Mitigates generator-dominated bias: the model sees a mix of manipulation
+    types per step rather than clusters of one generator (docs/02_architecture.md §9).
+    """
+
+    def __init__(self, records, batch_size: int, generator_key: str = "generator"):
+        self.batch_size = batch_size
+        from collections import defaultdict
+        gen_to_idx = defaultdict(list)
+        for i, r in enumerate(records):
+            gen_to_idx[r.get(generator_key, "unknown")].append(i)
+        self.generators = list(gen_to_idx.keys())
+        self.gen_indices = dict(gen_to_idx)
+        self.n = len(records)
+
+    def __iter__(self):
+        import random
+        pool = {g: list(idxs) for g, idxs in self.gen_indices.items()}
+        for g in pool:
+            random.shuffle(pool[g])
+        batches = []
+        while any(pool.values()):
+            batch = []
+            # Round-robin across generators
+            for g in self.generators:
+                while pool[g] and len(batch) < self.batch_size:
+                    batch.append(pool[g].pop())
+                    if len(batch) >= self.batch_size:
+                        break
+            if batch:
+                random.shuffle(batch)
+                batches.append(batch)
+        random.shuffle(batches)
+        return iter(batches)
+
+    def __len__(self):
+        return (self.n + self.batch_size - 1) // self.batch_size
+
+
 def collate(batch):
     out = {}
     keys_tensor = ["video", "audio", "video_label", "audio_label", "quadrant",
-                   "video_seg_mask", "audio_seg_mask"]
+                    "video_seg_mask", "audio_seg_mask"]
     for k in keys_tensor:
         out[k] = torch.stack([b[k] for b in batch])
     out["clip_id"] = [b["clip_id"] for b in batch]

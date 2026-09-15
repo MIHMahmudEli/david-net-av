@@ -21,7 +21,8 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
-from src.data.datasets import AVDeepfakeDataset, collate
+from src.data.datasets import AVDeepfakeDataset, BalancedGeneratorSampler, collate
+from src.data.augment import VideoAugmentor, AudioAugmentor, augment_batch
 from src.models.david_net import DavidNet, DavidNetConfig
 from src.models.video_encoder import build_video_encoder
 from src.models.audio_encoder import build_audio_encoder
@@ -113,7 +114,8 @@ def train(cfg):
     else:
         train_ds = AVDeepfakeDataset(cfg.train_manifest, cfg.shard_root,
                                      cfg.n_frames, cfg.audio_len)
-    train_dl = DataLoader(train_ds, batch_size=cfg.batch_size, shuffle=True,
+    train_dl = DataLoader(train_ds, batch_size=cfg.batch_size,
+                          sampler=BalancedGeneratorSampler(train_ds.records, cfg.batch_size),
                           num_workers=cfg.num_workers, collate_fn=collate)
 
     # Validation set (optional)
@@ -162,6 +164,11 @@ def train(cfg):
         else:
             print("No resume state found — starting fresh")
 
+    # ─── Augmentation ──────────────────────────────────────────────────
+    use_aug = getattr(cfg, "augment", True)
+    v_aug = VideoAugmentor(p=0.5) if use_aug else None
+    a_aug = AudioAugmentor(p=0.5) if use_aug else None
+
     # ─── Training loop ────────────────────────────────────────────────
     steps = 0
     model.train()
@@ -173,6 +180,7 @@ def train(cfg):
 
             for batch in train_dl:
                 batch = move(batch, device)
+                batch = augment_batch(batch, v_aug, a_aug)
                 opt.zero_grad(set_to_none=True)
                 with torch.amp.autocast("cuda", enabled=(device == "cuda")):
                     v_av, a_av = sample_modality_masks(
