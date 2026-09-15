@@ -82,7 +82,7 @@ class HFBackup:
     def __init__(
         self,
         run_id: str,
-        repo_id: str = "david-net-av/backup",
+        repo_id: str = "MoshinAli/david-net-av-backup",
         repo_type: str = "model",
         local_dir: str = "/kaggle/working",
     ):
