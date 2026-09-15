@@ -15,9 +15,10 @@ import json
 import logging
 import os
 import time
-from types import SimpleNamespace
+import traceback
 
 import torch
+import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from src.data.datasets import AVDeepfakeDataset, collate
@@ -38,9 +39,6 @@ def build_model(cfg) -> DavidNet:
         compose_quadrant=cfg.compose_quadrant,
     )
     if getattr(cfg, "feature_cache", None):
-        # Phase-A cached-feature regime: inputs are already (L, d) token sequences,
-        # so the encoders collapse to identity (docs/07_compute_and_hardware.md §2).
-        import torch.nn as nn
         venc, aenc = nn.Identity(), nn.Identity()
     else:
         venc = build_video_encoder(cfg)
@@ -56,11 +54,6 @@ def move(batch, device):
 
 
 def sample_modality_masks(batch_size: int, p: float, device):
-    """Modality dropout: with prob p a sample loses ONE stream (never both).
-
-    Trains the network to handle audio-only inputs and silent (video-only)
-    clips — see docs/02_architecture.md §7b.
-    """
     if p <= 0:
         return None, None
     drop = torch.rand(batch_size, device=device) < p
@@ -70,10 +63,49 @@ def sample_modality_masks(batch_size: int, p: float, device):
     return v_avail, a_avail
 
 
+@torch.no_grad()
+def validate(model, val_dl, device, weights):
+    """Run validation and return metrics dict."""
+    model.eval()
+    all_v_pred, all_a_pred, all_v_true, all_a_true, all_quad_pred, all_quad_true = [], [], [], [], [], []
+    total_loss_val = 0.0
+    n_batches = 0
+
+    for batch in val_dl:
+        batch = move(batch, device)
+        with torch.amp.autocast("cuda", enabled=(device == "cuda")):
+            out = model(batch["video"], batch["audio"])
+            loss, _ = total_loss(out, batch, weights, model=model)
+        total_loss_val += loss.item()
+        n_batches += 1
+
+        all_v_pred += torch.sigmoid(out["logit_v"]).cpu().tolist()
+        all_a_pred += torch.sigmoid(out["logit_a"]).cpu().tolist()
+        all_quad_pred += out["logit_quad"].argmax(-1).cpu().tolist()
+        all_v_true += batch["video_label"].cpu().tolist()
+        all_a_true += batch["audio_label"].cpu().tolist()
+        all_quad_true += batch["quadrant"].cpu().tolist()
+
+    # Compute AUC
+    from src.eval.metrics import per_modality, quadrant_metrics
+    v_metrics = per_modality(all_v_true, all_v_pred)
+    a_metrics = per_modality(all_a_true, all_a_pred)
+    q_metrics = quadrant_metrics(all_quad_true, all_quad_pred)
+
+    model.train()
+    return {
+        "val_loss": total_loss_val / max(n_batches, 1),
+        "video_auc": v_metrics.get("auc", 0.0),
+        "audio_auc": a_metrics.get("auc", 0.0),
+        "quadrant_acc": q_metrics.get("accuracy", 0.0),
+    }
+
+
 def train(cfg):
     set_seed(cfg.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
+    # ─── Data ─────────────────────────────────────────────────────────
     if getattr(cfg, "feature_cache", None):
         from src.data.datasets import CachedFeatureDataset
         train_ds = CachedFeatureDataset(cfg.train_manifest, cfg.feature_cache,
@@ -84,8 +116,18 @@ def train(cfg):
     train_dl = DataLoader(train_ds, batch_size=cfg.batch_size, shuffle=True,
                           num_workers=cfg.num_workers, collate_fn=collate)
 
+    # Validation set (optional)
+    val_manifest = getattr(cfg, "val_manifest", None)
+    val_dl = None
+    if val_manifest and os.path.exists(val_manifest):
+        val_ds = AVDeepfakeDataset(val_manifest, cfg.shard_root, cfg.n_frames, cfg.audio_len)
+        val_dl = DataLoader(val_ds, batch_size=cfg.batch_size, shuffle=False,
+                            num_workers=cfg.num_workers, collate_fn=collate)
+        print(f"Validation: {len(val_ds)} clips")
+
+    # ─── Model ────────────────────────────────────────────────────────
     model = build_model(cfg).to(device)
-    if getattr(cfg, "init_from", None):  # Stage 1: warm-start from a QACP checkpoint
+    if getattr(cfg, "init_from", None):
         state = torch.load(cfg.init_from, map_location=device)
         missing, unexpected = model.load_state_dict(state["model"], strict=False)
         print(f"init_from {cfg.init_from}: {len(missing)} missing, {len(unexpected)} unexpected keys")
@@ -95,24 +137,25 @@ def train(cfg):
     )
     scaler = torch.amp.GradScaler("cuda", enabled=(device == "cuda"))
 
-    # ─── HF Backup setup ──────────────────────────────────────────────
+    # ─── HF Backup ────────────────────────────────────────────────────
     run_id = getattr(cfg, "run_id", None)
     backup = None
     start_epoch = 0
+    best_auc = 0.0
 
     if run_id:
-        from src.utils.hf_backup import HFBackup, crash_guard
+        from src.utils.hf_backup import HFBackup
         backup = HFBackup(run_id=run_id, local_dir=getattr(cfg, "local_dir", "/kaggle/working"))
         backup.setup()
 
-        # Resume check
         resume = backup.load_resume_state()
         if resume is not None:
             start_epoch = resume.get("epoch", -1) + 1
+            best_auc = resume.get("best_auc", 0.0)
             try:
                 model.load_state_dict(resume["model"])
                 opt.load_state_dict(resume["optimizer"])
-                print(f"Resumed from HF: epoch {start_epoch}")
+                print(f"Resumed from HF: epoch {start_epoch}, best_auc={best_auc:.4f}")
             except Exception as e:
                 print(f"Resume load warning: {e} — starting from scratch")
                 start_epoch = 0
@@ -122,15 +165,12 @@ def train(cfg):
     # ─── Training loop ────────────────────────────────────────────────
     steps = 0
     model.train()
-    crash_guard_ctx = (lambda: __import__("src.utils.hf_backup", fromlist=["crash_guard"]).crash_guard(backup, model, lambda: epoch)) if backup else None
 
     try:
-        if crash_guard_ctx:
-            crash_guard_ctx().__enter__()
-
         for epoch in range(start_epoch, cfg.epochs):
             epoch_loss = 0.0
             epoch_steps = 0
+
             for batch in train_dl:
                 batch = move(batch, device)
                 opt.zero_grad(set_to_none=True)
@@ -159,20 +199,39 @@ def train(cfg):
             avg_loss = epoch_loss / max(epoch_steps, 1)
             _save(model, cfg, epoch)
 
+            # Validation
+            metrics = {"avg_loss": avg_loss}
+            if val_dl:
+                val_metrics = validate(model, val_dl, device, weights)
+                metrics.update(val_metrics)
+                val_auc = (val_metrics["video_auc"] + val_metrics["audio_auc"]) / 2
+                print(f"epoch {epoch} — loss={avg_loss:.4f} val_video_auc={val_metrics['video_auc']:.4f} "
+                      f"val_audio_auc={val_metrics['audio_auc']:.4f} val_quad_acc={val_metrics['quadrant_acc']:.4f}")
+
+                # Push best model
+                if val_auc > best_auc:
+                    best_auc = val_auc
+                    if backup:
+                        backup.push_best(model, epoch, val_auc)
+                    print(f"  ** new best AUC: {val_auc:.4f}")
+            else:
+                print(f"epoch {epoch} — loss={avg_loss:.4f}")
+
             # Push to HF
             if backup:
-                backup.push_checkpoint(model, opt, epoch, vars(cfg), {"avg_loss": avg_loss})
+                metrics["best_auc"] = best_auc
+                backup.push_checkpoint(model, opt, epoch, vars(cfg), metrics)
                 backup.push_log({
                     "epoch": epoch, "avg_loss": avg_loss, "steps": epoch_steps,
+                    **{k: v for k, v in metrics.items() if isinstance(v, float)},
                     "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
                 })
 
-            print(f"epoch {epoch} done — avg_loss={avg_loss:.4f}")
-
         # ─── Run complete ─────────────────────────────────────────────
+        final_metrics = {"epochs": cfg.epochs, "total_steps": steps, "best_auc": best_auc}
         if backup:
-            backup.push_final({"epochs": cfg.epochs, "total_steps": steps})
-            print(f"Training complete. All artifacts pushed to HF.")
+            backup.push_final(final_metrics)
+            print(f"Training complete. Best AUC: {best_auc:.4f}")
 
     except KeyboardInterrupt:
         print("\nInterrupted — pushing emergency checkpoint...")
@@ -184,15 +243,11 @@ def train(cfg):
         if backup:
             backup.emergency_push(model, epoch if 'epoch' in dir() else 0)
         raise
-    finally:
-        if crash_guard_ctx:
-            crash_guard_ctx().__exit__(None, None, None)
 
     return model
 
 
 def _save(model, cfg, epoch):
-    import os
     os.makedirs(cfg.out_dir, exist_ok=True)
     path = f"{cfg.out_dir}/david_net_epoch{epoch}.pt"
     torch.save({"model": model.state_dict(), "cfg": vars(cfg)}, path)
@@ -203,7 +258,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", required=True)
     ap.add_argument("--dry-run", action="store_true")
-    ap.add_argument("--run-id", default=None, help="Unique run ID for HF backup (e.g. run_001)")
+    ap.add_argument("--run-id", default=None)
     args = ap.parse_args()
     cfg = load_config(args.config)
     if args.dry_run:
