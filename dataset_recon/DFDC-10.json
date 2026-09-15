@@ -1,0 +1,103 @@
+{
+  "name": "DFDC-10",
+  "slug": "pranay22077/dfdc-10",
+  "files": [
+    {
+      "name": "dfdc_train_part_00/dfdc_train_part_0/aaqaifqrwn.mp4",
+      "size": 5128324
+    },
+    {
+      "name": "dfdc_train_part_00/dfdc_train_part_0/aayrffkzxn.mp4",
+      "size": 16193231
+    },
+    {
+      "name": "dfdc_train_part_00/dfdc_train_part_0/abhggqdift.mp4",
+      "size": 16107615
+    },
+    {
+      "name": "dfdc_train_part_00/dfdc_train_part_0/acagallncj.mp4",
+      "size": 12675645
+    },
+    {
+      "name": "dfdc_train_part_00/dfdc_train_part_0/acdkfksyev.mp4",
+      "size": 7604293
+    },
+    {
+      "name": "dfdc_train_part_00/dfdc_train_part_0/achdeirhym.mp4",
+      "size": 8166110
+    },
+    {
+      "name": "dfdc_train_part_00/dfdc_train_part_0/acryukkddn.mp4",
+      "size": 7612943
+    },
+    {
+      "name": "dfdc_train_part_00/dfdc_train_part_0/adftmlvzfs.mp4",
+      "size": 4043035
+    },
+    {
+      "name": "dfdc_train_part_00/dfdc_train_part_0/aegvtnwqoe.mp4",
+      "size": 7956094
+    },
+    {
+      "name": "dfdc_train_part_00/dfdc_train_part_0/aejvkfbtxs.mp4",
+      "size": 8634526
+    },
+    {
+      "name": "dfdc_train_part_00/dfdc_train_part_0/aeqpxjlbwu.mp4",
+      "size": 7458358
+    },
+    {
+      "name": "dfdc_train_part_00/dfdc_train_part_0/ahhdprhoww.mp4",
+      "size": 7742519
+    },
+    {
+      "name": "dfdc_train_part_00/dfdc_train_part_0/aimzesksew.mp4",
+      "size": 10206186
+    },
+    {
+      "name": "dfdc_train_part_00/dfdc_train_part_0/aiuimrebtg.mp4",
+      "size": 4299794
+    },
+    {
+      "name": "dfdc_train_part_00/dfdc_train_part_0/ajeegjgyzk.mp4",
+      "size": 4116807
+    },
+    {
+      "name": "dfdc_train_part_00/dfdc_train_part_0/akpuczgfpk.mp4",
+      "size": 15902729
+    },
+    {
+      "name": "dfdc_train_part_00/dfdc_train_part_0/alhqaurncj.mp4",
+      "size": 12551260
+    },
+    {
+      "name": "dfdc_train_part_00/dfdc_train_part_0/alidfjtwvg.mp4",
+      "size": 7724464
+    },
+    {
+      "name": "dfdc_train_part_00/dfdc_train_part_0/alnkzqihau.mp4",
+      "size": 15971664
+    },
+    {
+      "name": "dfdc_train_part_00/dfdc_train_part_0/alpkghdgrv.mp4",
+      "size": 8191918
+    }
+  ],
+  "analysis": {
+    "tree": {
+      "dfdc_train_part_00": {
+        "subdirs": [
+          "dfdc_train_part_0"
+        ],
+        "file_count": 20,
+        "total_size": 188287515
+      }
+    },
+    "extensions": {
+      ".mp4": 20
+    },
+    "total_size_bytes": 188287515,
+    "total_size_gb": 0.18,
+    "file_count": 20
+  }
+}

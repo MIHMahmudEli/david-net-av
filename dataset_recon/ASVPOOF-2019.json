@@ -1,0 +1,107 @@
+{
+  "name": "ASVPOOF-2019",
+  "slug": "anishsarkar22/asvpoof-2019-dataset-la",
+  "files": [
+    {
+      "name": "LA/ASVspoof2019_LA_asv_protocols/ASVspoof2019.LA.asv.dev.female.trl.txt",
+      "size": 677652
+    },
+    {
+      "name": "LA/ASVspoof2019_LA_asv_protocols/ASVspoof2019.LA.asv.dev.female.trn.txt",
+      "size": 972
+    },
+    {
+      "name": "LA/ASVspoof2019_LA_asv_protocols/ASVspoof2019.LA.asv.dev.gi.trl.txt",
+      "size": 976804
+    },
+    {
+      "name": "LA/ASVspoof2019_LA_asv_protocols/ASVspoof2019.LA.asv.dev.male.trl.txt",
+      "size": 299152
+    },
+    {
+      "name": "LA/ASVspoof2019_LA_asv_protocols/ASVspoof2019.LA.asv.dev.male.trn.txt",
+      "size": 1096
+    },
+    {
+      "name": "LA/ASVspoof2019_LA_asv_protocols/ASVspoof2019.LA.asv.eval.female.trl.txt",
+      "size": 2371140
+    },
+    {
+      "name": "LA/ASVspoof2019_LA_asv_protocols/ASVspoof2019.LA.asv.eval.female.trn.txt",
+      "size": 4374
+    },
+    {
+      "name": "LA/ASVspoof2019_LA_asv_protocols/ASVspoof2019.LA.asv.eval.gi.trl.txt",
+      "size": 3512112
+    },
+    {
+      "name": "LA/ASVspoof2019_LA_asv_protocols/ASVspoof2019.LA.asv.eval.male.trl.txt",
+      "size": 1140972
+    },
+    {
+      "name": "LA/ASVspoof2019_LA_asv_protocols/ASVspoof2019.LA.asv.eval.male.trn.txt",
+      "size": 5754
+    },
+    {
+      "name": "LA/ASVspoof2019_LA_asv_scores/ASVspoof2019.LA.asv.dev.gi.trl.scores.txt",
+      "size": 632703
+    },
+    {
+      "name": "LA/ASVspoof2019_LA_asv_scores/ASVspoof2019.LA.asv.eval.gi.trl.scores.txt",
+      "size": 2422073
+    },
+    {
+      "name": "LA/ASVspoof2019_LA_cm_protocols/ASVspoof2019.LA.cm.dev.trl.txt",
+      "size": 822400
+    },
+    {
+      "name": "LA/ASVspoof2019_LA_cm_protocols/ASVspoof2019.LA.cm.eval.trl.txt",
+      "size": 2358176
+    },
+    {
+      "name": "LA/ASVspoof2019_LA_cm_protocols/ASVspoof2019.LA.cm.train.trn.txt",
+      "size": 840120
+    },
+    {
+      "name": "LA/ASVspoof2019_LA_dev/LICENSE.txt",
+      "size": 19941
+    },
+    {
+      "name": "LA/ASVspoof2019_LA_dev/flac/LA_D_1000265.flac",
+      "size": 32573
+    },
+    {
+      "name": "LA/ASVspoof2019_LA_dev/flac/LA_D_1000752.flac",
+      "size": 38423
+    },
+    {
+      "name": "LA/ASVspoof2019_LA_dev/flac/LA_D_1001095.flac",
+      "size": 65292
+    },
+    {
+      "name": "LA/ASVspoof2019_LA_dev/flac/LA_D_1002130.flac",
+      "size": 85044
+    }
+  ],
+  "analysis": {
+    "tree": {
+      "LA": {
+        "subdirs": [
+          "ASVspoof2019_LA_asv_protocols",
+          "ASVspoof2019_LA_asv_scores",
+          "ASVspoof2019_LA_cm_protocols",
+          "ASVspoof2019_LA_dev"
+        ],
+        "file_count": 20,
+        "total_size": 16306773
+      }
+    },
+    "extensions": {
+      ".txt": 16,
+      ".flac": 4
+    },
+    "total_size_bytes": 16306773,
+    "total_size_gb": 0.02,
+    "file_count": 20
+  }
+}

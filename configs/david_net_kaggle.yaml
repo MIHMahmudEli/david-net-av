@@ -1,0 +1,56 @@
+# Kaggle training config. Optimized for T4 GPU (16GB VRAM).
+# Used by scripts/train_kaggle.ipynb
+
+seed: 42
+run_id: run_001          # CHANGE for each new run
+
+# --- model ---
+d_model: 768
+n_heads: 8
+n_fusion_layers: 4
+dropout: 0.1
+use_sync: true
+use_disentangle: true
+compose_quadrant: false
+
+# --- backbones (fallback for T4 VRAM) ---
+video_backbone: fallback
+audio_backbone: fallback
+video_model_name: MCG-NJU/videomae-base
+audio_model_name: microsoft/wavlm-base-plus
+freeze_blocks: 6
+freeze_feature_extractor: true
+
+# --- stage-1 warm start ---
+init_from: null
+
+# --- data ---
+n_frames: 16
+audio_len: 64000
+shard_root: null
+feature_cache: null
+train_manifest: src/data/manifests/fakeavceleb.jsonl
+
+# --- missing-modality ---
+modality_dropout: 0.15
+
+# --- optimization (T4-friendly) ---
+batch_size: 4
+num_workers: 2
+epochs: 30
+lr: 1.0e-4
+weight_decay: 1.0e-4
+log_every: 10
+out_dir: runs
+
+# --- HF backup (crash-proof) ---
+local_dir: /kaggle/working
+
+# --- loss weights ---
+loss_weights:
+  v: 1.0
+  a: 1.0
+  quad: 0.5
+  loc: 0.5
+  sync: 0.3
+  disentangle: 0.1

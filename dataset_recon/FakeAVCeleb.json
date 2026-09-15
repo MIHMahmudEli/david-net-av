@@ -1,0 +1,103 @@
+{
+  "name": "FakeAVCeleb",
+  "slug": "aicontentdetections/fakeavceleb-v1-2",
+  "files": [
+    {
+      "name": "FakeAVCeleb_v1.2/FakeVideo-FakeAudio/African/men/id00076/00109_10_id00476_wavtolip.mp4",
+      "size": 200654
+    },
+    {
+      "name": "FakeAVCeleb_v1.2/FakeVideo-FakeAudio/African/men/id00076/00109_10_id01076_wavtolip.mp4",
+      "size": 154940
+    },
+    {
+      "name": "FakeAVCeleb_v1.2/FakeVideo-FakeAudio/African/men/id00076/00109_10_id01179_wavtolip.mp4",
+      "size": 203730
+    },
+    {
+      "name": "FakeAVCeleb_v1.2/FakeVideo-FakeAudio/African/men/id00076/00109_10_id02005_wavtolip.mp4",
+      "size": 200562
+    },
+    {
+      "name": "FakeAVCeleb_v1.2/FakeVideo-FakeAudio/African/men/id00076/00109_10_id02342_wavtolip.mp4",
+      "size": 205072
+    },
+    {
+      "name": "FakeAVCeleb_v1.2/FakeVideo-FakeAudio/African/men/id00076/00109_12_id00518_wavtolip.mp4",
+      "size": 223867
+    },
+    {
+      "name": "FakeAVCeleb_v1.2/FakeVideo-FakeAudio/African/men/id00076/00109_12_id00761_wavtolip.mp4",
+      "size": 224737
+    },
+    {
+      "name": "FakeAVCeleb_v1.2/FakeVideo-FakeAudio/African/men/id00076/00109_12_id00987_wavtolip.mp4",
+      "size": 222511
+    },
+    {
+      "name": "FakeAVCeleb_v1.2/FakeVideo-FakeAudio/African/men/id00076/00109_12_id01856_wavtolip.mp4",
+      "size": 242357
+    },
+    {
+      "name": "FakeAVCeleb_v1.2/FakeVideo-FakeAudio/African/men/id00076/00109_12_id02296_wavtolip.mp4",
+      "size": 222948
+    },
+    {
+      "name": "FakeAVCeleb_v1.2/FakeVideo-FakeAudio/African/men/id00076/00109_2_id00166_wavtolip.mp4",
+      "size": 224949
+    },
+    {
+      "name": "FakeAVCeleb_v1.2/FakeVideo-FakeAudio/African/men/id00076/00109_2_id00701_wavtolip.mp4",
+      "size": 223584
+    },
+    {
+      "name": "FakeAVCeleb_v1.2/FakeVideo-FakeAudio/African/men/id00076/00109_2_id01236_wavtolip.mp4",
+      "size": 180460
+    },
+    {
+      "name": "FakeAVCeleb_v1.2/FakeVideo-FakeAudio/African/men/id00076/00109_2_id01521_wavtolip.mp4",
+      "size": 169932
+    },
+    {
+      "name": "FakeAVCeleb_v1.2/FakeVideo-FakeAudio/African/men/id00076/00109_2_id01598_wavtolip.mp4",
+      "size": 219395
+    },
+    {
+      "name": "FakeAVCeleb_v1.2/FakeVideo-FakeAudio/African/men/id00076/00109_4_id01392_wavtolip.mp4",
+      "size": 659373
+    },
+    {
+      "name": "FakeAVCeleb_v1.2/FakeVideo-FakeAudio/African/men/id00076/00109_4_id01528_wavtolip.mp4",
+      "size": 714462
+    },
+    {
+      "name": "FakeAVCeleb_v1.2/FakeVideo-FakeAudio/African/men/id00076/00109_4_id01691_wavtolip.mp4",
+      "size": 716734
+    },
+    {
+      "name": "FakeAVCeleb_v1.2/FakeVideo-FakeAudio/African/men/id00076/00109_4_id01995_wavtolip.mp4",
+      "size": 657766
+    },
+    {
+      "name": "FakeAVCeleb_v1.2/FakeVideo-FakeAudio/African/men/id00076/00109_4_id02296_wavtolip.mp4",
+      "size": 635894
+    }
+  ],
+  "analysis": {
+    "tree": {
+      "FakeAVCeleb_v1.2": {
+        "subdirs": [
+          "FakeVideo-FakeAudio"
+        ],
+        "file_count": 20,
+        "total_size": 6503927
+      }
+    },
+    "extensions": {
+      ".mp4": 20
+    },
+    "total_size_bytes": 6503927,
+    "total_size_gb": 0.01,
+    "file_count": 20
+  }
+}

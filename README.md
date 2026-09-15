@@ -88,6 +88,51 @@ python -m src.eval.figures --results results/ --out report/figures/generated
 Thesis figures regenerate automatically from the result JSONs and appear in the
 report on the next `pdflatex` run.
 
+## Kaggle Training (crash-proof)
+
+Training runs on **Kaggle notebooks** (T4 GPU, 12h/session, ~30h/week quota).
+Sessions can die without warning — all progress is backed up to HuggingFace.
+
+### Setup (one-time)
+1. Add `HF_TOKEN` to Kaggle Secrets (Settings -> Secrets -> Add)
+2. Attach training datasets to `/kaggle/input/`
+3. Attach this repo as a Kaggle dataset (or let the notebook clone it)
+
+### Start a new run
+```
+python -m src.training.train --config configs/david_net_kaggle.yaml --run-id run_001
+```
+
+### Resume (automatic)
+On a new Kaggle session, the same command automatically resumes from the last
+checkpoint pushed to HF. No manual intervention needed.
+
+### Switch accounts (quota exhausted)
+The HF repo path is account-agnostic (`runs/<run_id>/`). When your primary
+account's weekly quota runs out:
+1. Switch to a secondary Kaggle account
+2. Add the same `HF_TOKEN` to the new account's Secrets
+3. Run the same `--run-id` command — it picks up where the last account left off
+
+### Where things live on HF
+```
+david-net-av/backup/
+  runs/<run_id>/
+    checkpoints/epoch_0001.pt, epoch_0002.pt, ...
+    best/best.pt
+    logs/train_log.jsonl
+    metrics/metrics.json
+    figures/*.pdf
+    state/resume_state.json
+```
+
+### Run the notebook
+Open `scripts/train_kaggle.ipynb` in Kaggle, select T4 GPU, and hit Run All.
+The notebook handles: install deps, clone repo, load secrets, extract datasets,
+build manifests, train, and verify backup.
+
+---
+
 ## Roadmap
 See the 12-month plan in [`docs/01_research_proposal.md`](docs/01_research_proposal.md#9-timeline-12-months).
 Dataset access requests should start **first** — approvals are slow (see [`scripts/download.md`](scripts/download.md)).

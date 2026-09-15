@@ -1,0 +1,101 @@
+{
+  "name": "Celeb-DF-V2",
+  "slug": "reubensuju/celeb-df-v2",
+  "files": [
+    {
+      "name": "Celeb-real/id0_0000.mp4",
+      "size": 2345071
+    },
+    {
+      "name": "Celeb-real/id0_0001.mp4",
+      "size": 1613400
+    },
+    {
+      "name": "Celeb-real/id0_0002.mp4",
+      "size": 1674293
+    },
+    {
+      "name": "Celeb-real/id0_0003.mp4",
+      "size": 2245929
+    },
+    {
+      "name": "Celeb-real/id0_0004.mp4",
+      "size": 2287026
+    },
+    {
+      "name": "Celeb-real/id0_0005.mp4",
+      "size": 2234678
+    },
+    {
+      "name": "Celeb-real/id0_0006.mp4",
+      "size": 3636657
+    },
+    {
+      "name": "Celeb-real/id0_0007.mp4",
+      "size": 2288528
+    },
+    {
+      "name": "Celeb-real/id0_0008.mp4",
+      "size": 4404080
+    },
+    {
+      "name": "Celeb-real/id0_0009.mp4",
+      "size": 2591761
+    },
+    {
+      "name": "Celeb-real/id10_0000.mp4",
+      "size": 1101225
+    },
+    {
+      "name": "Celeb-real/id10_0001.mp4",
+      "size": 1077088
+    },
+    {
+      "name": "Celeb-real/id10_0002.mp4",
+      "size": 1157968
+    },
+    {
+      "name": "Celeb-real/id10_0003.mp4",
+      "size": 1319032
+    },
+    {
+      "name": "Celeb-real/id10_0004.mp4",
+      "size": 2309741
+    },
+    {
+      "name": "Celeb-real/id10_0005.mp4",
+      "size": 1535960
+    },
+    {
+      "name": "Celeb-real/id10_0006.mp4",
+      "size": 1232111
+    },
+    {
+      "name": "Celeb-real/id10_0007.mp4",
+      "size": 2031706
+    },
+    {
+      "name": "Celeb-real/id10_0008.mp4",
+      "size": 854199
+    },
+    {
+      "name": "Celeb-real/id10_0009.mp4",
+      "size": 3149380
+    }
+  ],
+  "analysis": {
+    "tree": {
+      "Celeb-real": {
+        "subdirs": [],
+        "file_count": 20,
+        "total_size": 41089833
+      }
+    },
+    "extensions": {
+      ".mp4": 20
+    },
+    "total_size_bytes": 41089833,
+    "total_size_gb": 0.04,
+    "file_count": 20
+  }
+}

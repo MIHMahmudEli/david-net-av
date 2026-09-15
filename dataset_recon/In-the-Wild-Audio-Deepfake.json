@@ -1,0 +1,105 @@
+{
+  "name": "In-the-Wild-Audio-Deepfake",
+  "slug": "abdallamohamed312/in-the-wild-audio-deepfake",
+  "files": [
+    {
+      "name": "meta.csv",
+      "size": 1021512
+    },
+    {
+      "name": "modified_meta.csv",
+      "size": 465586
+    },
+    {
+      "name": "release_in_the_wild/attribution.txt",
+      "size": 87
+    },
+    {
+      "name": "release_in_the_wild/fake/0.wav",
+      "size": 116478
+    },
+    {
+      "name": "release_in_the_wild/fake/1.wav",
+      "size": 710206
+    },
+    {
+      "name": "release_in_the_wild/fake/10.wav",
+      "size": 531198
+    },
+    {
+      "name": "release_in_the_wild/fake/10000.wav",
+      "size": 374910
+    },
+    {
+      "name": "release_in_the_wild/fake/10002.wav",
+      "size": 676474
+    },
+    {
+      "name": "release_in_the_wild/fake/10005.wav",
+      "size": 486586
+    },
+    {
+      "name": "release_in_the_wild/fake/10006.wav",
+      "size": 147834
+    },
+    {
+      "name": "release_in_the_wild/fake/10007.wav",
+      "size": 179258
+    },
+    {
+      "name": "release_in_the_wild/fake/10008.wav",
+      "size": 1086078
+    },
+    {
+      "name": "release_in_the_wild/fake/10009.wav",
+      "size": 265978
+    },
+    {
+      "name": "release_in_the_wild/fake/10011.wav",
+      "size": 221626
+    },
+    {
+      "name": "release_in_the_wild/fake/10012.wav",
+      "size": 198270
+    },
+    {
+      "name": "release_in_the_wild/fake/10014.wav",
+      "size": 835390
+    },
+    {
+      "name": "release_in_the_wild/fake/10017.wav",
+      "size": 633018
+    },
+    {
+      "name": "release_in_the_wild/fake/10026.wav",
+      "size": 605050
+    },
+    {
+      "name": "release_in_the_wild/fake/10029.wav",
+      "size": 1105018
+    },
+    {
+      "name": "release_in_the_wild/fake/1003.wav",
+      "size": 514298
+    }
+  ],
+  "analysis": {
+    "tree": {
+      "release_in_the_wild": {
+        "subdirs": [
+          "fake"
+        ],
+        "file_count": 18,
+        "total_size": 8687757
+      }
+    },
+    "extensions": {
+      ".csv": 2,
+      ".txt": 1,
+      ".wav": 17
+    },
+    "total_size_bytes": 10174855,
+    "total_size_gb": 0.01,
+    "file_count": 20
+  }
+}

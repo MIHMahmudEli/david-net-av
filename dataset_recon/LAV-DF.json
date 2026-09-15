@@ -1,0 +1,131 @@
+{
+  "name": "LAV-DF",
+  "slug": "aicontentdetections/lav-df",
+  "files": [
+    {
+      "name": "LAV-DF/LAV-DF-20260821T182323Z-1-001/LAV-DF/LAV-DF.zip.016",
+      "size": 1048576000
+    },
+    {
+      "name": "LAV-DF/LAV-DF-20260821T182323Z-1-001/LAV-DF/LAV-DF.zip.022",
+      "size": 1048576000
+    },
+    {
+      "name": "LAV-DF/LAV-DF-20260821T182323Z-1-002/LAV-DF/LAV-DF.zip.021",
+      "size": 1048576000
+    },
+    {
+      "name": "LAV-DF/LAV-DF-20260821T182323Z-1-002/LAV-DF/LAV-DF.zip.023",
+      "size": 1048576000
+    },
+    {
+      "name": "LAV-DF/LAV-DF-20260821T182323Z-1-003/LAV-DF/LAV-DF.zip.015",
+      "size": 1048576000
+    },
+    {
+      "name": "LAV-DF/LAV-DF-20260821T182323Z-1-003/LAV-DF/LAV-DF.zip.018",
+      "size": 1048576000
+    },
+    {
+      "name": "LAV-DF/LAV-DF-20260821T182323Z-1-004/LAV-DF/LAV-DF.zip.004",
+      "size": 1048576000
+    },
+    {
+      "name": "LAV-DF/LAV-DF-20260821T182323Z-1-004/LAV-DF/LAV-DF.zip.008",
+      "size": 1048576000
+    },
+    {
+      "name": "LAV-DF/LAV-DF-20260821T182323Z-1-005/LAV-DF/LAV-DF.zip.009",
+      "size": 1048576000
+    },
+    {
+      "name": "LAV-DF/LAV-DF-20260821T182323Z-1-005/LAV-DF/LAV-DF.zip.020",
+      "size": 1048576000
+    },
+    {
+      "name": "LAV-DF/LAV-DF-20260821T182323Z-1-006/LAV-DF/LAV-DF.zip.011",
+      "size": 1048576000
+    },
+    {
+      "name": "LAV-DF/LAV-DF-20260821T182323Z-1-006/LAV-DF/LAV-DF.zip.014",
+      "size": 1048576000
+    },
+    {
+      "name": "LAV-DF/LAV-DF-20260821T182323Z-1-007/LAV-DF/LAV-DF.zip.005",
+      "size": 1048576000
+    },
+    {
+      "name": "LAV-DF/LAV-DF-20260821T182323Z-1-007/LAV-DF/LAV-DF.zip.010",
+      "size": 1048576000
+    },
+    {
+      "name": "LAV-DF/LAV-DF-20260821T182323Z-1-008/LAV-DF/LAV-DF.zip.013",
+      "size": 1048576000
+    },
+    {
+      "name": "LAV-DF/LAV-DF-20260821T182323Z-1-008/LAV-DF/LAV-DF.zip.019",
+      "size": 1048576000
+    },
+    {
+      "name": "LAV-DF/LAV-DF-20260821T182323Z-1-009/LAV-DF/LAV-DF.zip.001",
+      "size": 1048576000
+    },
+    {
+      "name": "LAV-DF/LAV-DF-20260821T182323Z-1-009/LAV-DF/LAV-DF.zip.007",
+      "size": 1048576000
+    },
+    {
+      "name": "LAV-DF/LAV-DF-20260821T182323Z-1-010/LAV-DF/LAV-DF.zip.003",
+      "size": 1048576000
+    },
+    {
+      "name": "LAV-DF/LAV-DF-20260821T182323Z-1-010/LAV-DF/LAV-DF.zip.006",
+      "size": 1048576000
+    }
+  ],
+  "analysis": {
+    "tree": {
+      "LAV-DF": {
+        "subdirs": [
+          "LAV-DF-20260821T182323Z-1-001",
+          "LAV-DF-20260821T182323Z-1-002",
+          "LAV-DF-20260821T182323Z-1-003",
+          "LAV-DF-20260821T182323Z-1-004",
+          "LAV-DF-20260821T182323Z-1-005",
+          "LAV-DF-20260821T182323Z-1-006",
+          "LAV-DF-20260821T182323Z-1-007",
+          "LAV-DF-20260821T182323Z-1-008",
+          "LAV-DF-20260821T182323Z-1-009",
+          "LAV-DF-20260821T182323Z-1-010"
+        ],
+        "file_count": 20,
+        "total_size": 20971520000
+      }
+    },
+    "extensions": {
+      ".016": 1,
+      ".022": 1,
+      ".021": 1,
+      ".023": 1,
+      ".015": 1,
+      ".018": 1,
+      ".004": 1,
+      ".008": 1,
+      ".009": 1,
+      ".020": 1,
+      ".011": 1,
+      ".014": 1,
+      ".005": 1,
+      ".010": 1,
+      ".013": 1,
+      ".019": 1,
+      ".001": 1,
+      ".007": 1,
+      ".003": 1,
+      ".006": 1
+    },
+    "total_size_bytes": 20971520000,
+    "total_size_gb": 19.53,
+    "file_count": 20
+  }
+}

@@ -1,0 +1,108 @@
+{
+  "name": "DeepFakeTIMIT",
+  "slug": "fahimaislam1812/deepfaketimit",
+  "files": [
+    {
+      "name": "DeepfakeTIMIT/DeepfakeTIMIT/.dircksum",
+      "size": 376
+    },
+    {
+      "name": "DeepfakeTIMIT/DeepfakeTIMIT/README.txt",
+      "size": 1668
+    },
+    {
+      "name": "DeepfakeTIMIT/DeepfakeTIMIT/deepfake_images_1.png",
+      "size": 1497682
+    },
+    {
+      "name": "DeepfakeTIMIT/DeepfakeTIMIT/deepfake_images_2.png",
+      "size": 967780
+    },
+    {
+      "name": "DeepfakeTIMIT/DeepfakeTIMIT/fadg0-fram1-roi93.mov",
+      "size": 222568
+    },
+    {
+      "name": "DeepfakeTIMIT/DeepfakeTIMIT/fadg0-original.mov",
+      "size": 3384201
+    },
+    {
+      "name": "DeepfakeTIMIT/DeepfakeTIMIT/fram1-original.mov",
+      "size": 3510846
+    },
+    {
+      "name": "DeepfakeTIMIT/DeepfakeTIMIT/higher_quality/.dircksum",
+      "size": 156
+    },
+    {
+      "name": "DeepfakeTIMIT/DeepfakeTIMIT/higher_quality/fadg0/.dircksum",
+      "size": 819
+    },
+    {
+      "name": "DeepfakeTIMIT/DeepfakeTIMIT/higher_quality/fadg0/sa1-video-fram1.avi",
+      "size": 221148
+    },
+    {
+      "name": "DeepfakeTIMIT/DeepfakeTIMIT/higher_quality/fadg0/sa1.wav",
+      "size": 152398
+    },
+    {
+      "name": "DeepfakeTIMIT/DeepfakeTIMIT/higher_quality/fadg0/sa2-video-fram1.avi",
+      "size": 195476
+    },
+    {
+      "name": "DeepfakeTIMIT/DeepfakeTIMIT/higher_quality/fadg0/sa2.wav",
+      "size": 131918
+    },
+    {
+      "name": "DeepfakeTIMIT/DeepfakeTIMIT/higher_quality/fadg0/si1279-video-fram1.avi",
+      "size": 141314
+    },
+    {
+      "name": "DeepfakeTIMIT/DeepfakeTIMIT/higher_quality/fadg0/si1279.wav",
+      "size": 92238
+    },
+    {
+      "name": "DeepfakeTIMIT/DeepfakeTIMIT/higher_quality/fadg0/si1909-video-fram1.avi",
+      "size": 220584
+    },
+    {
+      "name": "DeepfakeTIMIT/DeepfakeTIMIT/higher_quality/fadg0/si1909.wav",
+      "size": 149838
+    },
+    {
+      "name": "DeepfakeTIMIT/DeepfakeTIMIT/higher_quality/fadg0/si649-video-fram1.avi",
+      "size": 393420
+    },
+    {
+      "name": "DeepfakeTIMIT/DeepfakeTIMIT/higher_quality/fadg0/si649.wav",
+      "size": 276558
+    },
+    {
+      "name": "DeepfakeTIMIT/DeepfakeTIMIT/higher_quality/fadg0/sx109-video-fram1.avi",
+      "size": 246942
+    }
+  ],
+  "analysis": {
+    "tree": {
+      "DeepfakeTIMIT": {
+        "subdirs": [
+          "DeepfakeTIMIT"
+        ],
+        "file_count": 20,
+        "total_size": 11807930
+      }
+    },
+    "extensions": {
+      "": 3,
+      ".txt": 1,
+      ".png": 2,
+      ".mov": 3,
+      ".avi": 6,
+      ".wav": 5
+    },
+    "total_size_bytes": 11807930,
+    "total_size_gb": 0.01,
+    "file_count": 20
+  }
+}
