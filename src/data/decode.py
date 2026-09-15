@@ -79,3 +79,21 @@ def decode_av_from_mp4(mp4_path: str, n_frames: int = 16, audio_len: int = 64000
     video = decode_video(str(mp4_path), n_frames, target_size)
     audio = decode_audio(str(mp4_path), audio_len)
     return video, audio
+
+
+def decode_av_with_faces(mp4_path: str, n_frames: int = 16, audio_len: int = 64000,
+                         face_size: int = 224, mouth_size: int = 96
+                         ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Decode video with face/mouth ROI extraction + audio.
+
+    Architecture §3: "Two crops because face-swap artifacts live in the whole face,
+    lip-sync artifacts live around the mouth."
+
+    Returns: faces (T, C, face_size, face_size), mouths (T, C, mouth_size, mouth_size),
+             audio (N,), full_frames (T, C, target_size, target_size)
+    """
+    from src.data.face_preprocess import extract_face_mouth_from_video
+    faces, mouths = extract_face_mouth_from_video(mp4_path, n_frames, face_size, mouth_size)
+    full_frames = decode_video(mp4_path, n_frames, face_size)
+    audio = decode_audio(mp4_path, audio_len)
+    return faces, mouths, audio, full_frames

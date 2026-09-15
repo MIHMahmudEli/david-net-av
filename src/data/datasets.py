@@ -40,7 +40,7 @@ def segments_to_mask(segments, length: int, duration: float) -> torch.Tensor:
 class AVDeepfakeDataset(Dataset):
     def __init__(self, manifest: str, shard_root: Optional[str] = None,
                  n_frames: int = 16, audio_len: int = 64000, filt=None,
-                 root_dir: Optional[str] = None):
+                 root_dir: Optional[str] = None, use_faces: bool = False):
         self.records = load_manifest(manifest)
         if filt is not None:
             self.records = [r for r in self.records if filt(r)]
@@ -48,6 +48,7 @@ class AVDeepfakeDataset(Dataset):
         self.root_dir = Path(root_dir) if root_dir else None
         self.n_frames = n_frames
         self.audio_len = audio_len
+        self.use_faces = use_faces
 
     def __len__(self):
         return len(self.records)
@@ -65,8 +66,14 @@ class AVDeepfakeDataset(Dataset):
         if self.root_dir is not None and "rel_path" in rec:
             mp4_path = self.root_dir / rec["rel_path"]
             if mp4_path.exists():
-                from src.data.decode import decode_av_from_mp4
-                return decode_av_from_mp4(str(mp4_path), self.n_frames, self.audio_len)
+                from src.data.decode import decode_av_with_faces, decode_av_from_mp4
+                use_faces = getattr(self, "use_faces", False)
+                if use_faces:
+                    faces, mouths, audio, full_frames = decode_av_with_faces(
+                        str(mp4_path), self.n_frames, self.audio_len)
+                    return full_frames, audio, faces, mouths
+                else:
+                    return decode_av_from_mp4(str(mp4_path), self.n_frames, self.audio_len)
 
         # 3. Dry-run fallback (random tensors)
         video = torch.randn(self.n_frames, 3, 224, 224)
