@@ -40,12 +40,18 @@ def segments_to_mask(segments, length: int, duration: float) -> torch.Tensor:
 class AVDeepfakeDataset(Dataset):
     def __init__(self, manifest: str, shard_root: Optional[str] = None,
                  n_frames: int = 16, audio_len: int = 64000, filt=None,
-                 root_dir: Optional[str] = None, use_faces: bool = False):
+                 root_dir=None, use_faces: bool = False):
+        """root_dir: str, Path, or list of str/Path for multi-dataset manifests."""
         self.records = load_manifest(manifest)
         if filt is not None:
             self.records = [r for r in self.records if filt(r)]
         self.shard_root = Path(shard_root) if shard_root else None
-        self.root_dir = Path(root_dir) if root_dir else None
+        if root_dir is None:
+            self.root_dirs = []
+        elif isinstance(root_dir, (list, tuple)):
+            self.root_dirs = [Path(p) for p in root_dir]
+        else:
+            self.root_dirs = [Path(root_dir)]
         self.n_frames = n_frames
         self.audio_len = audio_len
         self.use_faces = use_faces
@@ -66,12 +72,13 @@ class AVDeepfakeDataset(Dataset):
             if vp.exists() and ap.exists():
                 return torch.load(vp), torch.load(ap)
 
-        # 2. Decode from MP4 using rel_path
-        if self.root_dir is not None and "rel_path" in rec:
-            mp4_path = self.root_dir / rec["rel_path"]
-            if mp4_path.exists():
-                from src.data.decode import decode_av_from_mp4
-                return decode_av_from_mp4(str(mp4_path), self.n_frames, self.audio_len)
+        # 2. Decode from MP4 using rel_path (try all root dirs)
+        if self.root_dirs and "rel_path" in rec:
+            for rd in self.root_dirs:
+                mp4_path = rd / rec["rel_path"]
+                if mp4_path.exists():
+                    from src.data.decode import decode_av_from_mp4
+                    return decode_av_from_mp4(str(mp4_path), self.n_frames, self.audio_len)
 
         # 3. Dry-run fallback (random tensors)
         video = torch.randn(self.n_frames, 3, 224, 224)
@@ -82,11 +89,12 @@ class AVDeepfakeDataset(Dataset):
         """Extract face/mouth ROI crops for a record. Only used when use_faces=True."""
         if not self.use_faces:
             return None, None
-        if self.root_dir is not None and "rel_path" in rec:
-            mp4_path = self.root_dir / rec["rel_path"]
-            if mp4_path.exists():
-                from src.data.face_preprocess import extract_face_mouth_from_video
-                return extract_face_mouth_from_video(str(mp4_path), self.n_frames)
+        if self.root_dirs and "rel_path" in rec:
+            for rd in self.root_dirs:
+                mp4_path = rd / rec["rel_path"]
+                if mp4_path.exists():
+                    from src.data.face_preprocess import extract_face_mouth_from_video
+                    return extract_face_mouth_from_video(str(mp4_path), self.n_frames)
         return (torch.randn(self.n_frames, 3, 224, 224),
                 torch.randn(self.n_frames, 3, 96, 96))
 
