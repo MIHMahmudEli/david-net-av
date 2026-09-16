@@ -353,6 +353,73 @@ def build_lavdf(root: str) -> list[dict]:
 
 
 # ═══════════════════════════════════════════════════════════════════════
+# AV-Deepfake1M
+# ═══════════════════════════════════════════════════════════════════════
+
+def build_avdeepfake1m(root: str) -> list[dict]:
+    """AV-Deepfake1M: .mp4 files with temporal localization labels.
+
+    Searches for mp4s, CSV metadata, and JSON annotations.
+    All clips are AV deepfakes with both modalities manipulated.
+    """
+    root = Path(root)
+    records = []
+
+    mp4s = _find_files(root, ".mp4")
+    if not mp4s:
+        print("WARNING: No .mp4 files found in AV-Deepfake1M root")
+        return records
+
+    # Try to load metadata from CSV or JSON
+    meta_data = {}
+    for csv_file in _find_files(root, ".csv"):
+        try:
+            with open(csv_file, encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    fname = row.get("video", row.get("filename", row.get("file", "")))
+                    if fname:
+                        meta_data[fname] = row
+        except Exception:
+            continue
+
+    for mp4 in mp4s:
+        rel = mp4.relative_to(root).as_posix()
+        fname = mp4.name
+
+        m = meta_data.get(fname, {})
+        v_segs = [[0.0, WHOLE_CLIP]]
+        a_segs = [[0.0, WHOLE_CLIP]]
+
+        if m:
+            try:
+                vs = float(m.get("video_start", 0))
+                ve = float(m.get("video_end", WHOLE_CLIP))
+                als = float(m.get("audio_start", 0))
+                ale = float(m.get("audio_end", WHOLE_CLIP))
+                if ve > vs:
+                    v_segs = [[vs, ve]]
+                if ale > als:
+                    a_segs = [[als, ale]]
+            except (ValueError, TypeError):
+                pass
+
+        records.append({
+            "clip_id": rel.replace("/", "__").rsplit(".", 1)[0],
+            "rel_path": rel,
+            "video_label": 1, "audio_label": 1,
+            "quadrant": "FVFA",
+            "video_segments": v_segs,
+            "audio_segments": a_segs,
+            "generator": "av-deepfake1m",
+            "dataset": "av-deepfake1m",
+            "identity": mp4.stem, "meta": {},
+        })
+
+    return records
+
+
+# ═══════════════════════════════════════════════════════════════════════
 # CLI
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -365,6 +432,7 @@ BUILDERS = {
     "in-the-wild": build_inthewild,
     "wavefake": build_wavefake,
     "lav-df": build_lavdf,
+    "av-deepfake1m": build_avdeepfake1m,
 }
 
 

@@ -9,6 +9,7 @@
   "dataset_sources": [
     "aicontentdetections/fakeavceleb-v1-2",
     "aicontentdetections/lav-df",
+    "aicontentdetections/av-deepfake1m",
     "pranay22077/dfdc-10",
     "fahimaislam1812/deepfaketimit",
     "reubensuju/celeb-df-v2",
