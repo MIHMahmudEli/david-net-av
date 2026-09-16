@@ -1,6 +1,10 @@
 # QACP Stage-0 pretraining config (docs/02_architecture.md §8b).
 # Uses REAL (RVRA) clips only; pseudo-quadrants are constructed on the fly
 # (offline + cached-feature variant preferred on DGX Spark).
+#
+# IMPORTANT: SupCon needs large effective batch sizes (paper uses 256-8192).
+# On T4 (15.6GB VRAM), use batch_size=4 with grad_accum_steps=16 → effective 64.
+# Also unfreeze top encoder layers so features can adapt to synthetic transforms.
 seed: 42
 
 d_model: 768
@@ -12,7 +16,7 @@ use_disentangle: true
 
 video_backbone: fallback       # videomae for real runs
 audio_backbone: fallback       # wavlm for real runs
-freeze_blocks: 12              # Stage 0: encoders fully frozen
+freeze_blocks: 6               # unfreeze top 6 encoder layers for feature adaptation
 freeze_feature_extractor: true
 
 n_frames: 16
@@ -20,11 +24,12 @@ audio_len: 64000
 shard_root: null
 train_manifest: src/data/splits/train.jsonl   # filtered to RVRA inside the script
 
-batch_size: 8                  # SupCon wants larger batches; raise on the Spark (128 GB)
-num_workers: 0
+batch_size: 4                  # fit in T4 VRAM; use grad_accum for effective batch
+grad_accum_steps: 16           # 4 × 16 = effective batch 64 (SupCon needs ≥64)
+num_workers: 2
 epochs: 20
 lr: 1.0e-4
 weight_decay: 1.0e-4
 log_every: 10
 out_dir: runs/qacp
-qacp_temperature: 0.1
+qacp_temperature: 0.5          # higher τ for small batches (smoother softmax)

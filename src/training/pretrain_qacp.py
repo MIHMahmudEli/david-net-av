@@ -52,6 +52,10 @@ def pretrain(cfg):
                             lr=cfg.lr, weight_decay=cfg.weight_decay)
     scaler = torch.amp.GradScaler("cuda", enabled=(device == "cuda"))
 
+    # Gradient accumulation: simulate larger effective batch on limited VRAM
+    grad_accum = getattr(cfg, "grad_accum_steps", 1)
+    temperature = getattr(cfg, "qacp_temperature", 0.1)
+
     # ─── HF Backup setup ──────────────────────────────────────────────
     run_id = getattr(cfg, "run_id", None)
     backup = None
@@ -75,6 +79,9 @@ def pretrain(cfg):
         else:
             print("No QACP resume state — starting fresh")
 
+    effective_batch = cfg.batch_size * grad_accum
+    print(f"[qacp] Effective batch size: {cfg.batch_size} × {grad_accum} = {effective_batch}")
+
     # ─── Training loop ────────────────────────────────────────────────
     steps = 0
     model.train()
@@ -83,18 +90,24 @@ def pretrain(cfg):
         for epoch in range(start_epoch, cfg.epochs):
             epoch_loss = 0.0
             epoch_steps = 0
+            opt.zero_grad(set_to_none=True)
+
             for batch in dl:
                 batch = move(batch, device)
-                opt.zero_grad(set_to_none=True)
                 with torch.amp.autocast("cuda", enabled=(device == "cuda")):
                     out = model(batch["video"], batch["audio"])
-                    loss, parts = qacp_loss(out, batch, temperature=cfg.qacp_temperature)
-                scaler.scale(loss).backward()
-                scaler.step(opt)
-                scaler.update()
+                    loss, parts = qacp_loss(out, batch, temperature=temperature)
+                scaled_loss = loss / grad_accum
+                scaler.scale(scaled_loss).backward()
                 steps += 1
                 epoch_loss += loss.item()
                 epoch_steps += 1
+
+                if steps % grad_accum == 0:
+                    scaler.step(opt)
+                    scaler.update()
+                    opt.zero_grad(set_to_none=True)
+
                 if steps % cfg.log_every == 0:
                     print(f"[qacp] epoch {epoch} step {steps} " +
                           " ".join(f"{k}={v:.4f}" for k, v in parts.items()))
@@ -106,19 +119,26 @@ def pretrain(cfg):
                     return model
 
             # ─── End of epoch ──────────────────────────────────────────
-            avg_loss = epoch_loss / max(epoch_steps, 1)
-            os.makedirs(cfg.out_dir, exist_ok=True)
-            path = f"{cfg.out_dir}/qacp_epoch{epoch}.pt"
-            torch.save({"model": model.state_dict(), "cfg": vars(cfg)}, path)
-            print(f"saved {path}")
+            # Flush remaining accumulated gradients
+            if steps % grad_accum != 0:
+                scaler.step(opt)
+                scaler.update()
+                opt.zero_grad(set_to_none=True)
 
-            # Push to HF
+            avg_loss = epoch_loss / max(epoch_steps, 1)
+
+            # Push to HF (saves locally, uploads, then cleans up local to save disk)
             if backup:
                 backup.push_checkpoint(model, opt, epoch, vars(cfg), {"avg_loss": avg_loss})
                 backup.push_log({
                     "epoch": epoch, "avg_loss": avg_loss, "steps": epoch_steps,
                     "phase": "qacp", "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
                 })
+            else:
+                os.makedirs(cfg.out_dir, exist_ok=True)
+                path = f"{cfg.out_dir}/qacp_epoch{epoch}.pt"
+                torch.save({"model": model.state_dict(), "cfg": vars(cfg)}, path)
+                print(f"saved {path}")
 
         # ─── Run complete ─────────────────────────────────────────────
         if backup:

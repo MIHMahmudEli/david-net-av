@@ -210,7 +210,12 @@ class HFBackup:
         config: dict,
         extra: Optional[dict] = None,
     ):
-        """Push checkpoint + resume_state.json after each epoch."""
+        """Push checkpoint + resume_state.json after each epoch.
+
+        Saves locally -> uploads to HF -> deletes local copy to save disk.
+        For Kaggle (20GB working), each checkpoint is ~2.4GB so we cannot keep
+        multiple copies on disk.  HF is the source of truth for crash recovery.
+        """
         import torch
 
         state = {
@@ -226,6 +231,8 @@ class HFBackup:
         ckpt_dir.mkdir(parents=True, exist_ok=True)
         local_path = ckpt_dir / f"epoch_{epoch:04d}.pt"
         torch.save(state, local_path)
+        size_gb = local_path.stat().st_size / (1024 ** 3)
+        logger.info(f"[HFBackup] Saved local checkpoint ({size_gb:.2f} GB)")
 
         # Upload checkpoint
         repo_path = f"{self.base_path}/checkpoints/epoch_{epoch:04d}.pt"
@@ -241,10 +248,9 @@ class HFBackup:
         state_bytes = json.dumps(resume_state, indent=2).encode()
         self._upload_bytes(state_bytes, f"{self.base_path}/state/resume_state.json")
 
-        logger.info(f"[HFBackup] Pushed checkpoint epoch {epoch}")
-
-        # Keep only last 3 local checkpoints to save disk
-        self._cleanup_local_checkpoints(keep=3)
+        # Delete local checkpoint immediately to free disk (HF is source of truth)
+        local_path.unlink(missing_ok=True)
+        logger.info(f"[HFBackup] Pushed checkpoint epoch {epoch} and deleted local copy")
 
     def push_best(self, model, epoch: int, metric: float):
         """Push best model when validation metric improves."""
@@ -298,15 +304,23 @@ class HFBackup:
             self.push_figures(figures_dir)
 
     def emergency_push(self, model, epoch: int):
-        """Last-ditch push on crash. Best-effort, never raises."""
+        """Last-ditch push on crash. Model-weights-only (no optimizer) to save space."""
         try:
             logger.warning(f"[HFBackup] Emergency push at epoch {epoch}")
             import torch
-            ckpt_dir = self.local_dir / "emergency"
-            ckpt_dir.mkdir(parents=True, exist_ok=True)
-            local_path = ckpt_dir / f"emergency_epoch_{epoch:04d}.pt"
-            torch.save({"model": model.state_dict(), "epoch": epoch}, local_path)
-            self._upload_file(str(local_path), f"{self.base_path}/emergency/emergency_epoch_{epoch:04d}.pt")
+            state = {"model": model.state_dict(), "epoch": epoch}
+            # Write to a BytesIO buffer to avoid disk space issues
+            import io
+            buf = io.BytesIO()
+            torch.save(state, buf)
+            buf.seek(0)
+            api = self._get_api()
+            api.upload_file(
+                path_or_fileobj=buf,
+                path_in_repo=f"{self.base_path}/emergency/emergency_epoch_{epoch:04d}.pt",
+                repo_id=self.repo_id,
+                repo_type=self.repo_type,
+            )
         except Exception as e:
             logger.error(f"[HFBackup] Emergency push failed: {e}")
 
