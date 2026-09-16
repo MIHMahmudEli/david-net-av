@@ -319,6 +319,73 @@ class HFBackup:
         for f in files[:-keep]:
             f.unlink(missing_ok=True)
 
+    # ─── Download functions ──────────────────────────────────────────────
+
+    def list_checkpoints(self) -> list[str]:
+        """List all checkpoint paths in the HF repo for this run_id."""
+        api = self._get_api()
+        ckpt_path = f"{self.base_path}/checkpoints"
+        try:
+            files = api.list_repo_tree(
+                self.repo_id, path_in_repo=ckpt_path,
+                repo_type=self.repo_type, recursive=True
+            )
+            return sorted(
+                [f.path for f in files if hasattr(f, "path") and f.path.endswith(".pt")]
+            )
+        except Exception as e:
+            logger.warning(f"[HFBackup] List checkpoints failed: {e}")
+            return []
+
+    def download_checkpoint(self, repo_path: str, local_dir: Optional[str] = None) -> Optional[str]:
+        """Download a single checkpoint from HF repo.
+
+        Args:
+            repo_path: Path in repo, e.g. "runs/stage1_seed42/checkpoints/epoch_0015.pt"
+            local_dir: Where to save locally (default: self.local_dir / "downloads")
+
+        Returns:
+            Local file path, or None on failure.
+        """
+        api = self._get_api()
+        local_dir = Path(local_dir) if local_dir else self.local_dir / "downloads"
+        local_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            local_path = api.hf_hub_download(
+                self.repo_id, repo_path,
+                repo_type=self.repo_type,
+                local_dir=str(local_dir),
+            )
+            logger.info(f"[HFBackup] Downloaded: {repo_path} -> {local_path}")
+            return local_path
+        except Exception as e:
+            logger.error(f"[HFBackup] Download failed for {repo_path}: {e}")
+            return None
+
+    def download_best(self, local_dir: Optional[str] = None) -> Optional[str]:
+        """Download the best model checkpoint."""
+        return self.download_checkpoint(f"{self.base_path}/best/best.pt", local_dir)
+
+    def download_latest(self, local_dir: Optional[str] = None) -> Optional[str]:
+        """Download the latest epoch checkpoint."""
+        ckpts = self.list_checkpoints()
+        if not ckpts:
+            logger.warning("[HFBackup] No checkpoints to download")
+            return None
+        return self.download_checkpoint(ckpts[-1], local_dir)
+
+    def download_all(self, local_dir: Optional[str] = None) -> list[str]:
+        """Download all checkpoints for this run. Returns list of local paths."""
+        ckpts = self.list_checkpoints()
+        local_dir = Path(local_dir) if local_dir else self.local_dir / "downloads"
+        results = []
+        for ckpt_path in ckpts:
+            p = self.download_checkpoint(ckpt_path, str(local_dir))
+            if p:
+                results.append(p)
+        logger.info(f"[HFBackup] Downloaded {len(results)}/{len(ckpts)} checkpoints")
+        return results
+
 
 # ─── Convenience: crash wrapper ──────────────────────────────────────────
 

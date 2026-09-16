@@ -317,12 +317,15 @@ def main():
     ap.add_argument("--config", required=True)
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--run-id", default=None)
+    ap.add_argument("--resume-from", default=None, help="Path to checkpoint to resume from")
     args = ap.parse_args()
     cfg = load_config(args.config)
     if args.dry_run:
         cfg.dry_run = True
     if args.run_id:
         cfg.run_id = args.run_id
+    if args.resume_from:
+        cfg.init_from = args.resume_from
     train(cfg)
 
 
