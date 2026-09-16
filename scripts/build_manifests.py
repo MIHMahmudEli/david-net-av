@@ -432,7 +432,6 @@ BUILDERS = {
     "in-the-wild": build_inthewild,
     "wavefake": build_wavefake,
     "lav-df": build_lavdf,
-    "av-deepfake1m": build_avdeepfake1m,
 }
 
 
