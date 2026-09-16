@@ -24,7 +24,7 @@ class WavLMEncoder(nn.Module):
     """Wraps HF WavLM/Wav2Vec2; input raw waveform (B, num_samples) at 16 kHz."""
 
     def __init__(self, d_model: int = 768, model_name: str = "microsoft/wavlm-base-plus",
-                 freeze_feature_extractor: bool = True):
+                 freeze_feature_extractor: bool = True, freeze_blocks: int = 8):
         super().__init__()
         from transformers import AutoModel  # lazy import
         self.backbone = AutoModel.from_pretrained(model_name)
@@ -32,6 +32,19 @@ class WavLMEncoder(nn.Module):
         self.project = ProjectTo(hidden, d_model)
         if freeze_feature_extractor and hasattr(self.backbone, "feature_extractor"):
             self.backbone.feature_extractor._freeze_parameters()
+        # Freeze the first freeze_blocks transformer layers (WavLM uses .encoder.layers)
+        self._freeze_transformer_blocks(freeze_blocks)
+
+    def _freeze_transformer_blocks(self, n: int):
+        """Freeze the first n transformer blocks; leave the rest trainable for QACP."""
+        layers = None
+        if hasattr(self.backbone, "encoder") and hasattr(self.backbone.encoder, "layers"):
+            layers = self.backbone.encoder.layers
+        if layers is None:
+            return  # unsupported architecture variant, skip gracefully
+        for blk in layers[: min(n, len(layers))]:
+            for p in blk.parameters():
+                p.requires_grad = False
 
     def forward(self, waveform):
         out = self.backbone(waveform).last_hidden_state  # (B, L, hidden)
@@ -82,5 +95,6 @@ class SpecCNNFallbackAudioEncoder(nn.Module):
 
 def build_audio_encoder(cfg) -> nn.Module:
     if getattr(cfg, "audio_backbone", "fallback") == "wavlm":
-        return WavLMEncoder(cfg.d_model, cfg.audio_model_name, cfg.freeze_feature_extractor)
+        return WavLMEncoder(cfg.d_model, cfg.audio_model_name, cfg.freeze_feature_extractor,
+                            getattr(cfg, "freeze_blocks", 8))
     return SpecCNNFallbackAudioEncoder(cfg.d_model)

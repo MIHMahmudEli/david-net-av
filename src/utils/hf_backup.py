@@ -209,48 +209,116 @@ class HFBackup:
         epoch: int,
         config: dict,
         extra: Optional[dict] = None,
+        milestone_every: int = 5,
+        keep_milestones: int = 3,
     ):
-        """Push checkpoint + resume_state.json after each epoch.
+        """Smart checkpoint strategy — avoids uploading 2.4 GB every single epoch.
 
-        Saves locally -> uploads to HF -> deletes local copy to save disk.
-        For Kaggle (20GB working), each checkpoint is ~2.4GB so we cannot keep
-        multiple copies on disk.  HF is the source of truth for crash recovery.
+        Strategy
+        --------
+        1. **Latest** (every epoch, overwrites):  `epoch_latest.pt`
+           - Full state (model + optimizer + epoch) for crash recovery.
+           - Always overwrites the same filename → only 1 copy on HF at a time.
+           - Upload cost: 1 checkpoint per epoch (same as before), but replaces
+             the old one so HF storage stays constant.
+
+        2. **Milestone** (every `milestone_every` epochs, permanent):
+           `epoch_NNNN.pt` — a permanent record for ablations/paper tables.
+           - Model weights only (no optimizer) → ~half the size.
+           - Old milestones beyond `keep_milestones` are pruned from HF.
+
+        3. **Best** — tracked separately via `push_best()`. Not touched here.
+
+        Result for a 30-epoch run with milestone_every=5, keep_milestones=3:
+          - HF stores: latest + 3 milestone + best = ~4 files at any given time
+          - Total upload volume: 30 × latest + 6 × milestone ≈ 36 × 2.4 GB
+            vs. old approach: 30 × 2.4 GB = 72 GB  → same upload count but
+            storage stays bounded.  Use milestone_every=10 to halve uploads.
         """
         import torch
 
-        state = {
+        # ── 1. Latest checkpoint (full state, overwrites) ──────────────────
+        state_full = {
             "model": model.state_dict(),
             "optimizer": optimizer.state_dict(),
             "epoch": epoch,
             "config": config,
             **(extra or {}),
         }
-
-        # Save locally first
         ckpt_dir = self.local_dir / "checkpoints"
         ckpt_dir.mkdir(parents=True, exist_ok=True)
-        local_path = ckpt_dir / f"epoch_{epoch:04d}.pt"
-        torch.save(state, local_path)
-        size_gb = local_path.stat().st_size / (1024 ** 3)
-        logger.info(f"[HFBackup] Saved local checkpoint ({size_gb:.2f} GB)")
+        local_latest = ckpt_dir / "epoch_latest.pt"
+        torch.save(state_full, local_latest)
+        size_gb = local_latest.stat().st_size / (1024 ** 3)
+        logger.info(f"[HFBackup] Saved latest checkpoint ({size_gb:.2f} GB), epoch {epoch}")
 
-        # Upload checkpoint
-        repo_path = f"{self.base_path}/checkpoints/epoch_{epoch:04d}.pt"
-        self._upload_file(str(local_path), repo_path)
+        latest_repo = f"{self.base_path}/checkpoints/epoch_latest.pt"
+        self._upload_file(str(local_latest), latest_repo)
+        local_latest.unlink(missing_ok=True)  # free disk immediately
 
-        # Update resume_state.json
+        # ── 2. Milestone checkpoint (model-only, permanent) ────────────────
+        is_milestone = (epoch % milestone_every == 0) or (epoch == 0)
+        if is_milestone:
+            state_model_only = {
+                "model": model.state_dict(),
+                "epoch": epoch,
+                "config": config,
+                **(extra or {}),
+            }
+            local_ms = ckpt_dir / f"epoch_{epoch:04d}.pt"
+            torch.save(state_model_only, local_ms)
+            ms_size_gb = local_ms.stat().st_size / (1024 ** 3)
+            logger.info(f"[HFBackup] Milestone checkpoint epoch {epoch} ({ms_size_gb:.2f} GB)")
+            ms_repo = f"{self.base_path}/checkpoints/epoch_{epoch:04d}.pt"
+            self._upload_file(str(local_ms), ms_repo)
+            local_ms.unlink(missing_ok=True)
+
+            # Prune old milestones on HF (keep only the latest `keep_milestones`)
+            self._prune_hf_milestones(keep_milestones)
+
+        # ── 3. Update resume_state.json ────────────────────────────────────
         resume_state = {
             "epoch": epoch,
             "run_id": self.run_id,
-            "checkpoint": repo_path,
+            "checkpoint": latest_repo,
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
         }
         state_bytes = json.dumps(resume_state, indent=2).encode()
         self._upload_bytes(state_bytes, f"{self.base_path}/state/resume_state.json")
 
-        # Delete local checkpoint immediately to free disk (HF is source of truth)
-        local_path.unlink(missing_ok=True)
-        logger.info(f"[HFBackup] Pushed checkpoint epoch {epoch} and deleted local copy")
+        logger.info(f"[HFBackup] Checkpoint epoch {epoch} done "
+                    f"({'milestone + ' if is_milestone else ''})latest pushed to HF")
+
+    def _prune_hf_milestones(self, keep: int):
+        """Delete old milestone checkpoints from HF, keeping only the latest `keep`.
+
+        epoch_latest.pt and best.pt are never touched by this method.
+        """
+        try:
+            api = self._get_api()
+            ckpt_path = f"{self.base_path}/checkpoints"
+            files = api.list_repo_tree(
+                self.repo_id, path_in_repo=ckpt_path,
+                repo_type=self.repo_type, recursive=True
+            )
+            milestones = sorted(
+                [
+                    f.path for f in files
+                    if hasattr(f, "path")
+                    and f.path.endswith(".pt")
+                    and "epoch_" in f.path
+                    and "latest" not in f.path
+                ],
+            )
+            to_delete = milestones[:-keep] if len(milestones) > keep else []
+            for path in to_delete:
+                try:
+                    api.delete_file(path, repo_id=self.repo_id, repo_type=self.repo_type)
+                    logger.info(f"[HFBackup] Pruned old milestone: {path}")
+                except Exception as e:
+                    logger.warning(f"[HFBackup] Could not prune {path}: {e}")
+        except Exception as e:
+            logger.warning(f"[HFBackup] Milestone pruning skipped: {e}")
 
     def push_best(self, model, epoch: int, metric: float):
         """Push best model when validation metric improves."""

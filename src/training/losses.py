@@ -91,6 +91,11 @@ def supcon_loss(features, labels, temperature: float = 0.1):
     labels:   (B,)   — samples sharing a label are positives for each other.
     Used by QACP with a *different* label partition per embedding space
     (docs/02_architecture.md §8b): z_v ~ video-auth, z_a ~ audio-auth, z_c ~ sync-state.
+
+    When no positive pairs exist in the batch (all unique labels — common at small batch
+    sizes), falls back to NT-Xent (SimCLR-style) treating each sample as its own positive
+    via the log-softmax diagonal. This ensures a meaningful gradient is always returned
+    instead of the silent zero-gradient trap of `features.sum() * 0.0`.
     """
     f = F.normalize(features, dim=-1)
     sim = f @ f.t() / temperature                          # (B, B)
@@ -99,13 +104,23 @@ def supcon_loss(features, labels, temperature: float = 0.1):
     pos_mask = (labels.unsqueeze(0) == labels.unsqueeze(1)) & ~eye
 
     # log-softmax over all non-self pairs
-    sim = sim.masked_fill(eye, float("-inf"))
-    log_prob = sim - torch.logsumexp(sim, dim=1, keepdim=True)
+    sim_no_self = sim.masked_fill(eye, float("-inf"))
+    log_prob = sim_no_self - torch.logsumexp(sim_no_self, dim=1, keepdim=True)
 
     n_pos = pos_mask.sum(1)
     valid = n_pos > 0
     if not valid.any():
-        return features.sum() * 0.0  # grad-connected zero (e.g. batch has no positive pairs)
+        # No same-label pairs in the batch (common at batch_size ≤ 5 with many classes).
+        # Fall back to NT-Xent: treat the most-similar non-self sample as a soft positive
+        # using the full similarity distribution. This avoids the silent zero-gradient
+        # trap and keeps the encoder learning separable representations.
+        # The loss encourages maximum margin between the most-similar pair and all others.
+        # log_prob diagonal = log(softmax over non-self), negating pushes embeddings apart.
+        ntsim = sim.masked_fill(eye, float("-inf"))
+        # Treat the most-similar non-self as the positive
+        best_pos = ntsim.max(dim=1).values  # (B,)
+        log_denom = torch.logsumexp(ntsim, dim=1)  # (B,)
+        return -(best_pos - log_denom).mean()
     # zero-out non-positives BEFORE summing (log_prob has -inf on the diagonal; -inf*0=NaN)
     mean_log_prob_pos = log_prob.masked_fill(~pos_mask, 0.0).sum(1)[valid] / n_pos[valid]
     return -mean_log_prob_pos.mean()

@@ -5,6 +5,11 @@
 # IMPORTANT: SupCon needs large effective batch sizes (paper uses 256-8192).
 # On T4 (15.6GB VRAM), use batch_size=4 with grad_accum_steps=16 → effective 64.
 # Also unfreeze top encoder layers so features can adapt to synthetic transforms.
+#
+# COLLAPSE FIX (2026-09): freeze_blocks must be < total encoder blocks.
+#   VideoMAE-base: 12 blocks  → set freeze_blocks: 8  (leaves top 4 trainable)
+#   WavLM-base+:   12 blocks  → same freeze_blocks value applies
+#   Freezing ALL 12 blocks = constant features = ln(N) loss plateau = collapse.
 seed: 42
 
 d_model: 768
@@ -13,10 +18,11 @@ n_fusion_layers: 4
 dropout: 0.1
 use_sync: true
 use_disentangle: true
+compose_quadrant: false
 
 video_backbone: fallback       # videomae for real runs
 audio_backbone: fallback       # wavlm for real runs
-freeze_blocks: 6               # unfreeze top 6 encoder layers for feature adaptation
+freeze_blocks: 8               # freeze bottom 8 of 12 blocks; top 4 remain trainable
 freeze_feature_extractor: true
 
 n_frames: 16
@@ -29,7 +35,17 @@ grad_accum_steps: 16           # 4 × 16 = effective batch 64 (SupCon needs ≥6
 num_workers: 2
 epochs: 20
 lr: 1.0e-4
+lr_encoder: 1.0e-5            # lower LR for the (partially) unfrozen encoder layers
 weight_decay: 1.0e-4
+warmup_epochs: 2
 log_every: 10
 out_dir: runs/qacp
-qacp_temperature: 0.5          # higher τ for small batches (smoother softmax)
+
+# Checkpoint strategy (see hf_backup.py push_checkpoint docstring)
+#   epoch_latest.pt   : uploaded every epoch (overwrites), used for crash resume
+#   epoch_NNNN.pt     : permanent milestone, uploaded every `milestone_every` epochs
+#   best.pt           : uploaded whenever avg_loss improves
+milestone_every: 5     # permanent checkpoint every 5 epochs  (epochs 0,5,10,15,20,25,30)
+keep_milestones: 3     # prune HF after this many milestones (keeps last 3 = ~15 epochs of history)
+qacp_temperature: 0.5          # higher τ for small effective batches (smoother softmax)
+                               # DO NOT use 0.1 with effective batch < 128: causes collapse

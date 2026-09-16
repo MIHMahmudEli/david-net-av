@@ -25,7 +25,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from src.data.datasets import AVDeepfakeDataset
-from src.data.synthetic_quadrants import QACPDataset, collate_qacp
+from src.data.synthetic_quadrants import QACPDataset, collate_qacp, collate_qacp_stratified
 from src.training.losses import qacp_loss
 from src.training.train import build_model, move
 from src.utils.config import load_config
@@ -44,10 +44,26 @@ def pretrain(cfg):
                              filt=lambda r: r["video_label"] == 0 and r["audio_label"] == 0,
                              root_dir=root_dir)
     ds = QACPDataset(base)
+    # Use stratified collation to guarantee positive pairs in every batch.
+    # At batch_size=4 with 5 pseudo-classes, plain random sampling often yields
+    # all-unique-label batches which silently produce zero gradients.
     dl = DataLoader(ds, batch_size=cfg.batch_size, shuffle=True,
-                    num_workers=cfg.num_workers, collate_fn=collate_qacp)
+                    num_workers=cfg.num_workers, collate_fn=collate_qacp_stratified,
+                    drop_last=True)
 
     model = build_model(cfg).to(device)
+
+    # Log how many parameters are actually trainable (useful to catch accidental full-freeze)
+    total_p = sum(p.numel() for p in model.parameters())
+    trainable_p = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"[qacp] Parameters: {trainable_p:,} trainable / {total_p:,} total "
+          f"({100.0 * trainable_p / max(total_p, 1):.1f}%)")
+    if trainable_p == 0:
+        raise RuntimeError(
+            "[qacp] No trainable parameters! Check freeze_blocks / freeze_feature_extractor. "
+            "Set freeze_blocks < total_encoder_blocks (VideoMAE-base has 12 blocks; "
+            "recommend freeze_blocks=8 to leave last 4 unfrozen for QACP).")
+
     opt = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad],
                             lr=cfg.lr, weight_decay=cfg.weight_decay)
     scaler = torch.amp.GradScaler("cuda", enabled=(device == "cuda"))
@@ -55,6 +71,8 @@ def pretrain(cfg):
     # Gradient accumulation: simulate larger effective batch on limited VRAM
     grad_accum = getattr(cfg, "grad_accum_steps", 1)
     temperature = getattr(cfg, "qacp_temperature", 0.1)
+    milestone_every = getattr(cfg, "milestone_every", 5)
+    keep_milestones = getattr(cfg, "keep_milestones", 3)
 
     # ─── HF Backup setup ──────────────────────────────────────────────
     run_id = getattr(cfg, "run_id", None)
@@ -85,6 +103,7 @@ def pretrain(cfg):
     # ─── Training loop ────────────────────────────────────────────────
     steps = 0
     model.train()
+    best_loss = float("inf")
 
     try:
         for epoch in range(start_epoch, cfg.epochs):
@@ -104,6 +123,10 @@ def pretrain(cfg):
                 epoch_steps += 1
 
                 if steps % grad_accum == 0:
+                    scaler.unscale_(opt)
+                    torch.nn.utils.clip_grad_norm_(
+                        [p for p in model.parameters() if p.requires_grad], max_norm=1.0
+                    )
                     scaler.step(opt)
                     scaler.update()
                     opt.zero_grad(set_to_none=True)
@@ -126,12 +149,25 @@ def pretrain(cfg):
                 opt.zero_grad(set_to_none=True)
 
             avg_loss = epoch_loss / max(epoch_steps, 1)
+            is_best = avg_loss < best_loss
+            if is_best:
+                best_loss = avg_loss
 
-            # Push to HF (saves locally, uploads, then cleans up local to save disk)
+            print(f"[qacp] epoch {epoch} avg_loss={avg_loss:.4f} best={best_loss:.4f}"
+                  f"{' (NEW BEST)' if is_best else ''}")
+
+            # Push to HF with smart checkpoint strategy
             if backup:
-                backup.push_checkpoint(model, opt, epoch, vars(cfg), {"avg_loss": avg_loss})
+                backup.push_checkpoint(
+                    model, opt, epoch, vars(cfg), {"avg_loss": avg_loss},
+                    milestone_every=milestone_every,
+                    keep_milestones=keep_milestones,
+                )
+                if is_best:
+                    backup.push_best(model, epoch, avg_loss)
                 backup.push_log({
-                    "epoch": epoch, "avg_loss": avg_loss, "steps": epoch_steps,
+                    "epoch": epoch, "avg_loss": avg_loss, "best_loss": best_loss,
+                    "steps": epoch_steps, "is_best": is_best,
                     "phase": "qacp", "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
                 })
             else:

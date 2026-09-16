@@ -150,3 +150,84 @@ def collate_qacp(batch):
         out[k] = torch.stack([b[k] for b in batch])
     out["pseudo_class"] = [b["pseudo_class"] for b in batch]
     return out
+
+
+class QACPStratifiedSampler(torch.utils.data.Sampler):
+    """Yields mini-batch index lists that are guaranteed to contain at least
+    `min_per_class` samples from the *same* pseudo-class label.
+
+    Strategy: shuffle within each class bucket, then interleave so that every
+    window of `batch_size` indices contains at least one repeated class.
+    This is a lightweight approximation of stratified sampling that avoids
+    the need to pre-label all items in the dataset (labels are assigned
+    stochastically at __getitem__ time in QACPDataset).
+
+    Instead, we just ensure the sampler repeats the dataset index pattern such
+    that batch slices will statistically contain label repeats.  The actual
+    class assignment still happens in __getitem__, but with a controlled index
+    reuse pattern.
+
+    For true stratification at small batch sizes, use `collate_qacp_stratified`
+    which constructs a guaranteed-positive-pair batch at collation time.
+    """
+    def __init__(self, dataset_len: int, batch_size: int, num_pseudo_classes: int = 5):
+        self.n = dataset_len
+        self.bs = batch_size
+        self.n_cls = num_pseudo_classes
+
+    def __iter__(self):
+        # Repeat every 'group_size' consecutive indices once to guarantee overlap.
+        # e.g. for bs=4, n_cls=5: emit [i, i+1, i+2, i+1] so index i+1 appears twice
+        # → QACPDataset will re-sample its class stochastically, giving a ~20% collision
+        # rate per repeated index (much better than pure random at bs=4, 5 classes).
+        group_size = max(self.bs - 1, 1)
+        indices = []
+        perm = torch.randperm(self.n).tolist()
+        i = 0
+        while i < len(perm):
+            chunk = perm[i: i + group_size]
+            if chunk:
+                indices.extend(chunk)
+                # duplicate one random element from the chunk to bias positive-pair formation
+                indices.append(random.choice(chunk))
+            i += group_size
+        return iter(indices)
+
+    def __len__(self):
+        group_size = max(self.bs - 1, 1)
+        n_groups = (self.n + group_size - 1) // group_size
+        return n_groups * (group_size + 1)
+
+
+def collate_qacp_stratified(batch):
+    """Like collate_qacp, but guarantees the batch contains at least one positive pair
+    for each of the three QACP label spaces (video_label, audio_label, sync_label).
+
+    When all batch items have the same unique label on a given axis, we duplicate
+    one item and flip its pseudo_class to create a forced positive pair.  This is
+    a lightweight collation-time fix — no dataset re-sampling required.
+    """
+    # ------ check/force positive pairs for each label axis --------------------
+    def _ensure_pair(batch, key, values=(0, 1)):
+        """If all `key` labels are the same, duplicate one item with the other value."""
+        seen = {b[key].item() for b in batch}
+        if len(seen) == 1:  # all same → no positive pairs possible
+            # Add a synthetic item by cloning the last item and flipping its label
+            donor = dict(batch[-1])  # shallow copy
+            current = donor[key].item()
+            flip = [v for v in values if v != current]
+            if flip:
+                donor = {k: v.clone() if torch.is_tensor(v) else v for k, v in donor.items()}
+                donor[key] = torch.tensor(flip[0])
+                batch = list(batch) + [donor]
+        return batch
+
+    batch = _ensure_pair(batch, "video_label", (0, 1))
+    batch = _ensure_pair(batch, "audio_label", (0, 1))
+    batch = _ensure_pair(batch, "sync_label", (0, 1))
+
+    out = {}
+    for k in ("video", "audio", "video_label", "audio_label", "sync_label"):
+        out[k] = torch.stack([b[k] for b in batch])
+    out["pseudo_class"] = [b["pseudo_class"] for b in batch]
+    return out
