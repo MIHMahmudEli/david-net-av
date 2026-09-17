@@ -132,9 +132,20 @@ def train(cfg):
     # ─── Model ────────────────────────────────────────────────────────
     model = build_model(cfg).to(device)
     if getattr(cfg, "init_from", None):
-        state = torch.load(cfg.init_from, map_location=device)
-        missing, unexpected = model.load_state_dict(state["model"], strict=False)
-        print(f"init_from {cfg.init_from}: {len(missing)} missing, {len(unexpected)} unexpected keys")
+        if not os.path.exists(cfg.init_from):
+            print(
+                f"WARNING: init_from '{cfg.init_from}' not found on disk — "
+                "skipping weight init and training from random initialisation.\n"
+                "To fix: ensure the QACP checkpoint is downloaded from HF before "
+                "launching Stage 1 (see Cell 10 in train_kaggle.ipynb)."
+            )
+        else:
+            state = torch.load(cfg.init_from, map_location=device, weights_only=True)
+            missing, unexpected = model.load_state_dict(state["model"], strict=False)
+            print(
+                f"init_from {cfg.init_from}: "
+                f"{len(missing)} missing, {len(unexpected)} unexpected keys"
+            )
 
     # Gradient checkpointing on video backbone (docs/02_architecture.md §9)
     if getattr(cfg, "gradient_checkpointing", True):
