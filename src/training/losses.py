@@ -127,9 +127,16 @@ def supcon_loss(features, labels, temperature: float = 0.1):
 
 
 def qacp_loss(out: dict, batch: dict, temperature: float = 0.1):
-    """Factorized SupCon over the three embedding spaces (QACP Stage 0)."""
-    l_v = supcon_loss(out["z_v"], batch["video_label"], temperature)
-    l_a = supcon_loss(out["z_a"], batch["audio_label"], temperature)
+    """Factorized SupCon over the three embedding spaces (QACP Stage 0).
+
+    Uses pre-fusion embeddings (z_v_pre, z_a_pre) for the unimodal terms
+    (video_label, audio_label) to prevent cross-modal leakage — the audio
+    encoder should not learn to classify audio authenticity using video
+    artifacts leaked through fusion layers.  The consistency term (z_c)
+    is intentionally cross-modal and stays post-fusion.
+    """
+    l_v = supcon_loss(out["z_v_pre"], batch["video_label"], temperature)
+    l_a = supcon_loss(out["z_a_pre"], batch["audio_label"], temperature)
     l_c = supcon_loss(out["z_c"], batch["sync_label"], temperature) \
         if out["z_c"].numel() else out["z_v"].new_zeros(())
     total = l_v + l_a + l_c

@@ -140,6 +140,8 @@ class DavidNet(nn.Module):
         both = (v_avail * a_avail)      # (B,) 1 only when cross-modal evidence exists
 
         attn_maps = []
+        z_v_pre = v.mean(1)   # pre-fusion pooling for unimodal SupCon (no cross-modal leakage)
+        z_a_pre = a.mean(1)
         for blk in self.fusion:
             v, a, attn = blk(v, a)
             attn_maps.append(attn)
@@ -175,6 +177,7 @@ class DavidNet(nn.Module):
             "loc_a": self.loc_a(a).squeeze(-1),   # (B, La)
             "agreement": agreement,
             "z_v": z_v, "z_a": z_a, "z_c": z_c,
+            "z_v_pre": z_v_pre, "z_a_pre": z_a_pre,
             "sync_pack": sync_pack,
             "attn_maps": attn_maps,
             "v_avail": v_avail, "a_avail": a_avail, "both_avail": both,
