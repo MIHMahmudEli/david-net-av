@@ -1,6 +1,7 @@
 {
   "name": "WaveFake",
   "slug": "dinaahmed11/wavefake",
+  "note": "Recon against dinaahmed11/wavefake (.flac). Training notebooks mount walimuhammadahmad/fakeaudio instead — build_wavefake() now searches both .flac and .wav.",
   "files": [
     {
       "name": "1/1/1943-138033-0000.flac",

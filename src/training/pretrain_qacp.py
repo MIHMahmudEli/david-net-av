@@ -74,6 +74,10 @@ def pretrain(cfg):
     milestone_every = getattr(cfg, "milestone_every", 5)
     keep_milestones = getattr(cfg, "keep_milestones", 3)
 
+    # Early stopping: halt if avg_loss fails to improve for `patience` epochs
+    patience = getattr(cfg, "patience", 5)
+    min_delta = getattr(cfg, "min_delta", 1e-4)
+
     # ─── HF Backup setup ──────────────────────────────────────────────
     run_id = getattr(cfg, "run_id", None)
     backup = None
@@ -104,6 +108,7 @@ def pretrain(cfg):
     steps = 0
     model.train()
     best_loss = float("inf")
+    no_improve = 0
 
     try:
         for epoch in range(start_epoch, cfg.epochs):
@@ -149,12 +154,37 @@ def pretrain(cfg):
                 opt.zero_grad(set_to_none=True)
 
             avg_loss = epoch_loss / max(epoch_steps, 1)
-            is_best = avg_loss < best_loss
+            is_best = avg_loss < (best_loss - min_delta)
             if is_best:
                 best_loss = avg_loss
+                no_improve = 0
+            else:
+                no_improve += 1
 
             print(f"[qacp] epoch {epoch} avg_loss={avg_loss:.4f} best={best_loss:.4f}"
-                  f"{' (NEW BEST)' if is_best else ''}")
+                  f"{' (NEW BEST)' if is_best else ''} no_improve={no_improve}/{patience}")
+
+            # Early stopping: plateau detected
+            if no_improve >= patience:
+                print(f"[qacp] Early stopping: no improvement for {patience} epochs")
+                if backup:
+                    backup.push_checkpoint(
+                        model, opt, epoch, vars(cfg), {"avg_loss": avg_loss, "early_stop": True},
+                        milestone_every=milestone_every,
+                        keep_milestones=keep_milestones,
+                    )
+                    backup.push_log({
+                        "epoch": epoch, "avg_loss": avg_loss, "best_loss": best_loss,
+                        "steps": epoch_steps, "is_best": is_best,
+                        "early_stop": True, "reason": f"no_improve={patience}",
+                        "phase": "qacp", "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                    })
+                    backup.push_final({
+                        "epochs": epoch + 1, "total_steps": steps, "phase": "qacp",
+                        "best_loss": best_loss, "early_stop": True,
+                    })
+                    print(f"[qacp] Early stop checkpoint pushed to HF.")
+                break
 
             # Push to HF with smart checkpoint strategy
             if backup:

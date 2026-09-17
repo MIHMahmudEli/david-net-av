@@ -258,17 +258,23 @@ def build_inthewild(root: str) -> list[dict]:
 # ═══════════════════════════════════════════════════════════════════════
 
 def build_wavefake(root: str) -> list[dict]:
-    """WaveFake: .flac files. All fake (generated audio). Audio-only."""
+    """WaveFake: audio files (.flac or .wav). All fake (generated audio). Audio-only.
+
+    Supports two known Kaggle dataset layouts:
+    - dinaahmed11/wavefake: .flac files in speaker/subfolder/*.flac
+    - walimuhammadahmad/fakeaudio: .wav or .flac files, various layouts
+    """
     root = Path(root)
     records = []
 
-    for flac in _find_files(root, ".flac"):
-        rel = flac.relative_to(root).as_posix()
-        parts = flac.relative_to(root).parts
+    audio_files = _find_files(root, ".flac") + _find_files(root, ".wav")
+    for audio in audio_files:
+        rel = audio.relative_to(root).as_posix()
+        parts = audio.relative_to(root).parts
         model = parts[0] if len(parts) > 0 else "wavefake"
 
         records.append({
-            "clip_id": f"wavefake_{flac.stem}",
+            "clip_id": f"wavefake_{audio.stem}",
             "rel_path": rel,
             "video_label": 0,  # no video — pair with real
             "audio_label": 1,
@@ -276,7 +282,7 @@ def build_wavefake(root: str) -> list[dict]:
             "video_segments": [],
             "audio_segments": [[0.0, WHOLE_CLIP]],
             "generator": model, "dataset": "wavefake",
-            "identity": flac.stem, "meta": {"model": model},
+            "identity": audio.stem, "meta": {"model": model},
         })
 
     return records
