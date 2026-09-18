@@ -175,7 +175,9 @@ class BalancedGeneratorSampler(torch.utils.data.Sampler):
                 random.shuffle(batch)
                 batches.append(batch)
         random.shuffle(batches)
-        return iter(batches)
+        # Yield individual indices (DataLoader handles batching via batch_size)
+        for batch in batches:
+            yield from batch
 
     def __len__(self):
         return (self.n + self.batch_size - 1) // self.batch_size

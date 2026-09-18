@@ -25,7 +25,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from src.data.datasets import AVDeepfakeDataset
-from src.data.synthetic_quadrants import QACPDataset, collate_qacp
+from src.data.synthetic_quadrants import QACPDataset, collate_qacp_stratified
 from src.training.losses import qacp_loss
 from src.training.train import build_model, move
 from src.utils.config import load_config
@@ -48,7 +48,7 @@ def pretrain(cfg):
     # At batch_size=4 with 5 pseudo-classes, plain random sampling often yields
     # all-unique-label batches which silently produce zero gradients.
     dl = DataLoader(ds, batch_size=cfg.batch_size, shuffle=True,
-                    num_workers=cfg.num_workers, collate_fn=collate_qacp,
+                    num_workers=cfg.num_workers, collate_fn=collate_qacp_stratified,
                     drop_last=True)
 
     model = build_model(cfg).to(device)
