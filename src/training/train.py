@@ -252,6 +252,10 @@ def train(cfg):
                     out = model(batch["video"], batch["audio"], v_avail=v_av, a_avail=a_av)
                     loss, parts = total_loss(out, batch, weights, model=model)
                 scaler.scale(loss).backward()
+                scaler.unscale_(opt)
+                torch.nn.utils.clip_grad_norm_(
+                    [p for p in model.parameters() if p.requires_grad], max_norm=1.0
+                )
                 scaler.step(opt)
                 scaler.update()
                 steps += 1
