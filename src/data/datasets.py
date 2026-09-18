@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Optional
 
 import torch
+import torch.nn.functional as F
 from torch.utils.data import Dataset
 
 QUADRANT_TO_IDX = {"RVRA": 0, "RVFA": 1, "FVRA": 2, "FVFA": 3}
@@ -64,25 +65,60 @@ class AVDeepfakeDataset(Dataset):
 
         Returns: (video, audio) always. Face crops are handled separately
         via get_faces() when use_faces=True.
+
+        Video tensors are normalized to (T, 3, 224, 224) regardless of source.
         """
+        video, audio = None, None
+
         # 1. Try precomputed feature cache
         if self.shard_root is not None:
             vp = self.shard_root / f"{rec['clip_id']}_video.pt"
             ap = self.shard_root / f"{rec['clip_id']}_audio.pt"
             if vp.exists() and ap.exists():
-                return torch.load(vp), torch.load(ap)
+                video, audio = torch.load(vp), torch.load(ap)
 
         # 2. Decode from MP4 using rel_path (try all root dirs)
-        if self.root_dirs and "rel_path" in rec:
+        if video is None and self.root_dirs and "rel_path" in rec:
             for rd in self.root_dirs:
                 mp4_path = rd / rec["rel_path"]
                 if mp4_path.exists():
                     from src.data.decode import decode_av_from_mp4
-                    return decode_av_from_mp4(str(mp4_path), self.n_frames, self.audio_len)
+                    video, audio = decode_av_from_mp4(str(mp4_path), self.n_frames, self.audio_len)
+                    break
 
         # 3. Dry-run fallback (random tensors)
-        video = torch.randn(self.n_frames, 3, 224, 224)
-        audio = torch.randn(self.audio_len)
+        if video is None:
+            video = torch.randn(self.n_frames, 3, 224, 224)
+            audio = torch.randn(self.audio_len)
+
+        # ── Shape normalization ────────────────────────────────────────
+        # Ensure video is always (T, 3, H, W) to prevent collate/augment crashes.
+        if video.ndim == 4:
+            T, X, H, W = video.shape
+            # If channel dim is not 3, try to fix common mismatches
+            if X != 3:
+                # Maybe saved as (T, H, W, C) — permute last dim to channel
+                if W == 3:
+                    video = video.permute(0, 3, 1, 2)  # (T, 3, H, W)
+                else:
+                    # Unknown layout: take first 3 channels or repeat gray
+                    video = video[:, :3, :, :] if X > 3 else video.repeat(1, 3 // X, 1, 1)
+            # Ensure spatial dims are 224×224
+            _, _, H, W = video.shape
+            if H != 224 or W != 224:
+                video = F.interpolate(video, size=(224, 224), mode="bilinear", align_corners=False)
+        elif video.ndim == 3:
+            # Missing channel dim: (T, H, W) → (T, 3, H, W)
+            video = video.unsqueeze(1).repeat(1, 3, 1, 1)
+        elif video.ndim == 5:
+            # (B, T, C, H, W) leaked into single sample — flatten first two dims
+            video = video.view(-1, *video.shape[-3:])
+            if video.shape[1] != 3:
+                video = video[:, :3, :, :]
+
+        if audio is not None and audio.ndim > 1:
+            audio = audio.flatten()
+
         return video, audio
 
     def get_faces(self, rec):
@@ -183,12 +219,36 @@ class BalancedGeneratorSampler(torch.utils.data.Sampler):
         return (self.n + self.batch_size - 1) // self.batch_size
 
 
+def _normalize_video(v: torch.Tensor) -> torch.Tensor:
+    """Ensure a video tensor is (T, 3, H, W)."""
+    if v.ndim == 4:
+        T, X, H, W = v.shape
+        if X != 3:
+            if W == 3:
+                v = v.permute(0, 3, 1, 2)
+            else:
+                v = v[:, :3, :, :] if X > 3 else v.repeat(1, 3 // X, 1, 1)
+        _, _, H, W = v.shape
+        if H != 224 or W != 224:
+            v = F.interpolate(v, size=(224, 224), mode="bilinear", align_corners=False)
+    elif v.ndim == 3:
+        v = v.unsqueeze(1).repeat(1, 3, 1, 1)
+    elif v.ndim == 5:
+        v = v.view(-1, *v.shape[-3:])
+        if v.shape[1] != 3:
+            v = v[:, :3, :, :]
+    return v
+
+
 def collate(batch):
     out = {}
     keys_tensor = ["video", "audio", "video_label", "audio_label", "quadrant",
                     "video_seg_mask", "audio_seg_mask"]
     for k in keys_tensor:
-        out[k] = torch.stack([b[k] for b in batch])
+        items = [b[k] for b in batch]
+        if k == "video":
+            items = [_normalize_video(v) for v in items]
+        out[k] = torch.stack(items)
     out["clip_id"] = [b["clip_id"] for b in batch]
     out["generator"] = [b["generator"] for b in batch]
     out["dataset"] = [b["dataset"] for b in batch]

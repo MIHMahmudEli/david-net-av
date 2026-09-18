@@ -96,7 +96,30 @@ def augment_batch(batch: dict, video_aug: VideoAugmentor | None = None,
                   audio_aug: AudioAugmentor | None = None) -> dict:
     """Apply augmentations to a training batch in-place."""
     if video_aug is not None:
-        batch["video"] = torch.stack([video_aug(v) for v in batch["video"]])
+        vids = batch["video"]
+        # If vids is already a stacked tensor, iterate over batch dim
+        if torch.is_tensor(vids):
+            augmented = []
+            for v in vids:
+                # Defensive: ensure (T, C, H, W) with C=3
+                if v.ndim == 4 and v.shape[1] != 3:
+                    if v.shape[-1] == 3:
+                        v = v.permute(0, 3, 1, 2)
+                    else:
+                        v = v[:, :3, :, :]
+                augmented.append(video_aug(v))
+            batch["video"] = torch.stack(augmented)
+        else:
+            # list of tensors — normalize each before augmenting
+            normalized = []
+            for v in vids:
+                if v.ndim == 4 and v.shape[1] != 3:
+                    if v.shape[-1] == 3:
+                        v = v.permute(0, 3, 1, 2)
+                    else:
+                        v = v[:, :3, :, :]
+                normalized.append(video_aug(v))
+            batch["video"] = torch.stack(normalized)
     if audio_aug is not None:
         batch["audio"] = torch.stack([audio_aug(a) for a in batch["audio"]])
     return batch
