@@ -211,6 +211,7 @@ class HFBackup:
         extra: Optional[dict] = None,
         milestone_every: int = 5,
         keep_milestones: int = 3,
+        resume_extras: Optional[dict] = None,
     ):
         """Smart checkpoint strategy — avoids uploading 2.4 GB every single epoch.
 
@@ -282,6 +283,7 @@ class HFBackup:
             "run_id": self.run_id,
             "checkpoint": latest_repo,
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            **(resume_extras or {}),
         }
         state_bytes = json.dumps(resume_state, indent=2).encode()
         self._upload_bytes(state_bytes, f"{self.base_path}/state/resume_state.json")

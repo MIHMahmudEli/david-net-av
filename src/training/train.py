@@ -198,6 +198,9 @@ def train(cfg):
         if resume is not None:
             start_epoch = resume.get("epoch", -1) + 1
             best_auc = resume.get("best_auc", 0.0)
+            # Also check _hf_meta (resume_state.json) for best_auc
+            if best_auc == 0.0 and "_hf_meta" in resume:
+                best_auc = resume["_hf_meta"].get("best_auc", 0.0)
             try:
                 model.load_state_dict(resume["model"])
                 opt.load_state_dict(resume["optimizer"])
@@ -289,7 +292,8 @@ def train(cfg):
             # Push to HF
             if backup:
                 metrics["best_auc"] = best_auc
-                backup.push_checkpoint(model, opt, epoch, vars(cfg), metrics)
+                backup.push_checkpoint(model, opt, epoch, vars(cfg), metrics,
+                                       resume_extras={"best_auc": best_auc})
                 backup.push_log({
                     "epoch": epoch, "avg_loss": avg_loss, "steps": epoch_steps,
                     **{k: v for k, v in metrics.items() if isinstance(v, float)},

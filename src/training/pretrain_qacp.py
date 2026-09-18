@@ -82,22 +82,24 @@ def pretrain(cfg):
     run_id = getattr(cfg, "run_id", None)
     backup = None
     start_epoch = 0
+    _resume = None
 
     if run_id:
         from src.utils.hf_backup import HFBackup
         backup = HFBackup(run_id=run_id, local_dir=getattr(cfg, "local_dir", "/kaggle/working"))
         backup.setup()
 
-        resume = backup.load_resume_state()
-        if resume is not None:
-            start_epoch = resume.get("epoch", -1) + 1
+        _resume = backup.load_resume_state()
+        if _resume is not None:
+            start_epoch = _resume.get("epoch", -1) + 1
             try:
-                model.load_state_dict(resume["model"])
-                opt.load_state_dict(resume["optimizer"])
+                model.load_state_dict(_resume["model"])
+                opt.load_state_dict(_resume["optimizer"])
                 print(f"QACP resumed from HF: epoch {start_epoch}")
             except Exception as e:
                 print(f"Resume load warning: {e} — starting from scratch")
                 start_epoch = 0
+                _resume = None
         else:
             print("No QACP resume state — starting fresh")
 
@@ -107,8 +109,8 @@ def pretrain(cfg):
     # ─── Training loop ────────────────────────────────────────────────
     steps = 0
     model.train()
-    best_loss = float("inf")
-    no_improve = 0
+    best_loss = float("inf") if _resume is None else _resume.get("best_loss", float("inf"))
+    no_improve = 0 if _resume is None else _resume.get("no_improve", 0)
 
     try:
         for epoch in range(start_epoch, cfg.epochs):
@@ -172,6 +174,7 @@ def pretrain(cfg):
                         model, opt, epoch, vars(cfg), {"avg_loss": avg_loss, "early_stop": True},
                         milestone_every=milestone_every,
                         keep_milestones=keep_milestones,
+                        resume_extras={"best_loss": best_loss, "no_improve": no_improve},
                     )
                     backup.push_log({
                         "epoch": epoch, "avg_loss": avg_loss, "best_loss": best_loss,
@@ -192,6 +195,7 @@ def pretrain(cfg):
                     model, opt, epoch, vars(cfg), {"avg_loss": avg_loss},
                     milestone_every=milestone_every,
                     keep_milestones=keep_milestones,
+                    resume_extras={"best_loss": best_loss, "no_improve": no_improve},
                 )
                 if is_best:
                     backup.push_best(model, epoch, avg_loss)
