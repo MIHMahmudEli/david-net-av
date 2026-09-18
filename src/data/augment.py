@@ -26,20 +26,27 @@ class VideoAugmentor:
             scale = random.uniform(0.8, 1.0)
             new_h, new_w = int(H * scale), int(W * scale)
             frames = F.interpolate(
-                frames.permute(0, 2, 3, 1), size=(new_h, new_w),
+                frames, size=(new_h, new_w),
                 mode="bilinear", align_corners=False
-            ).permute(0, 3, 1, 2)
+            )
             frames = F.interpolate(
                 frames, size=(H, W), mode="bilinear", align_corners=False
             )
-        # Gaussian blur
+        # Gaussian blur — applied per-channel to avoid kernel shape issues
         if random.random() < 0.2:
             sigma = random.uniform(0.5, 1.5)
             k = int(sigma * 3) | 1
+            # Build a 1-D Gaussian kernel and apply as separable blur
+            x_coords = torch.arange(k, dtype=torch.float32, device=frames.device) - k // 2
+            g1d = torch.exp(-x_coords.pow(2) / (2 * sigma ** 2))
+            g1d = g1d / g1d.sum()
+            # Horizontal pass: (T*C, 1, H, W) convolved with (1, 1, 1, k)
             x = frames.reshape(T * C, 1, H, W)
-            kernel = torch.randn(k, 1, 1, 1) * 0.1
-            kernel = kernel.to(x.device)
-            x = F.conv2d(x, kernel.expand(1, -1, -1, -1), padding=k // 2)
+            kh = g1d.reshape(1, 1, 1, k)
+            x = F.conv2d(x, kh, padding=(0, k // 2))
+            # Vertical pass: (T*C, 1, H, W) convolved with (1, 1, k, 1)
+            kv = g1d.reshape(1, 1, k, 1)
+            x = F.conv2d(x, kv, padding=(k // 2, 0))
             frames = x.reshape(T, C, H, W)
         # Color jitter
         if random.random() < 0.4:
@@ -92,34 +99,50 @@ class AudioAugmentor:
         return wave
 
 
+def _normalize_video_batch(v: torch.Tensor) -> torch.Tensor:
+    """Ensure a video tensor batch is (B, T, 3, H, W) or (T, 3, H, W)."""
+    if v.ndim == 5:
+        B, T, X, H, W = v.shape
+        if X != 3:
+            if W == 3:
+                v = v.permute(0, 1, 4, 2, 3)
+            else:
+                v = v[:, :, :3, :, :]
+        return v
+    if v.ndim == 4:
+        T, X, H, W = v.shape
+        if X != 3:
+            if W == 3:
+                v = v.permute(0, 3, 1, 2)
+            else:
+                v = v[:, :3, :, :] if X > 3 else v.repeat(1, 3 // X, 1, 1)
+        _, _, H, W = v.shape
+        if H != 224 or W != 224:
+            v = F.interpolate(v, size=(224, 224), mode="bilinear", align_corners=False)
+        return v
+    if v.ndim == 3:
+        v = v.unsqueeze(1).repeat(1, 3, 1, 1)
+        return v
+    return v
+
+
 def augment_batch(batch: dict, video_aug: VideoAugmentor | None = None,
                   audio_aug: AudioAugmentor | None = None) -> dict:
     """Apply augmentations to a training batch in-place."""
+    # Always normalize video channels first, even when augmenting is off
+    vids = batch["video"]
+    if torch.is_tensor(vids) and vids.ndim >= 4:
+        vids = _normalize_video_batch(vids)
+        batch["video"] = vids
     if video_aug is not None:
-        vids = batch["video"]
-        # If vids is already a stacked tensor, iterate over batch dim
+        # Now iterate and augment per-sample
         if torch.is_tensor(vids):
             augmented = []
             for v in vids:
-                # Defensive: ensure (T, C, H, W) with C=3
-                if v.ndim == 4 and v.shape[1] != 3:
-                    if v.shape[-1] == 3:
-                        v = v.permute(0, 3, 1, 2)
-                    else:
-                        v = v[:, :3, :, :]
                 augmented.append(video_aug(v))
             batch["video"] = torch.stack(augmented)
         else:
-            # list of tensors — normalize each before augmenting
-            normalized = []
-            for v in vids:
-                if v.ndim == 4 and v.shape[1] != 3:
-                    if v.shape[-1] == 3:
-                        v = v.permute(0, 3, 1, 2)
-                    else:
-                        v = v[:, :3, :, :]
-                normalized.append(video_aug(v))
-            batch["video"] = torch.stack(normalized)
+            batch["video"] = torch.stack([video_aug(v) for v in vids])
     if audio_aug is not None:
         batch["audio"] = torch.stack([audio_aug(a) for a in batch["audio"]])
     return batch
