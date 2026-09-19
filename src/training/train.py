@@ -241,6 +241,7 @@ def train(cfg):
 
             epoch_loss = 0.0
             epoch_steps = 0
+            nan_count = 0
 
             for batch in train_dl:
                 batch = move(batch, device)
@@ -251,10 +252,38 @@ def train(cfg):
                         batch["video"].size(0), cfg.modality_dropout, batch["video"].device)
                     out = model(batch["video"], batch["audio"], v_avail=v_av, a_avail=a_av)
                     loss, parts = total_loss(out, batch, weights, model=model)
+                # NaN detection — skip step if loss exploded
+                if torch.isnan(loss) or torch.isinf(loss):
+                    print(f"epoch {epoch} step {steps + 1} NaN/Inf detected — skipping step")
+                    opt.zero_grad(set_to_none=True)
+                    scaler.update()
+                    steps += 1
+                    nan_count += 1
+                    if nan_count >= 5:
+                        print(f"epoch {epoch} too many NaN steps ({nan_count}) — aborting epoch")
+                        break
+                    continue
+                nan_count = 0
                 scaler.scale(loss).backward()
                 scaler.unscale_(opt)
+                # Check for NaN/Inf in gradients before clipping
+                grad_ok = True
+                for p in model.parameters():
+                    if p.grad is not None and (torch.isnan(p.grad).any() or torch.isinf(p.grad).any()):
+                        grad_ok = False
+                        break
+                if not grad_ok:
+                    print(f"epoch {epoch} step {steps + 1} NaN/Inf gradient — skipping step")
+                    opt.zero_grad(set_to_none=True)
+                    scaler.update()
+                    steps += 1
+                    nan_count += 1
+                    if nan_count >= 5:
+                        print(f"epoch {epoch} too many NaN steps ({nan_count}) — aborting epoch")
+                        break
+                    continue
                 torch.nn.utils.clip_grad_norm_(
-                    [p for p in model.parameters() if p.requires_grad], max_norm=1.0
+                    [p for p in model.parameters() if p.requires_grad], max_norm=0.5
                 )
                 scaler.step(opt)
                 scaler.update()
@@ -272,37 +301,41 @@ def train(cfg):
                     return model
 
             # ─── End of epoch ──────────────────────────────────────────
-            avg_loss = epoch_loss / max(epoch_steps, 1)
-            _save(model, cfg, epoch)
-
-            # Validation
-            metrics = {"avg_loss": avg_loss}
-            if val_dl:
-                val_metrics = validate(model, val_dl, device, weights)
-                metrics.update(val_metrics)
-                val_auc = (val_metrics["video_auc"] + val_metrics["audio_auc"]) / 2
-                print(f"epoch {epoch} — loss={avg_loss:.4f} val_video_auc={val_metrics['video_auc']:.4f} "
-                      f"val_audio_auc={val_metrics['audio_auc']:.4f} val_quad_acc={val_metrics['quadrant_acc']:.4f}")
-
-                # Push best model
-                if val_auc > best_auc:
-                    best_auc = val_auc
-                    if backup:
-                        backup.push_best(model, epoch, val_auc)
-                    print(f"  ** new best AUC: {val_auc:.4f}")
+            epoch_aborted = nan_count >= 5
+            if epoch_aborted:
+                print(f"epoch {epoch} ABORTED due to NaN — skipping save/validate")
             else:
-                print(f"epoch {epoch} — loss={avg_loss:.4f}")
+                avg_loss = epoch_loss / max(epoch_steps, 1)
+                _save(model, cfg, epoch)
 
-            # Push to HF
-            if backup:
-                metrics["best_auc"] = best_auc
-                backup.push_checkpoint(model, opt, epoch, vars(cfg), metrics,
-                                       resume_extras={"best_auc": best_auc})
-                backup.push_log({
-                    "epoch": epoch, "avg_loss": avg_loss, "steps": epoch_steps,
-                    **{k: v for k, v in metrics.items() if isinstance(v, float)},
-                    "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
-                })
+                # Validation
+                metrics = {"avg_loss": avg_loss}
+                if val_dl:
+                    val_metrics = validate(model, val_dl, device, weights)
+                    metrics.update(val_metrics)
+                    val_auc = (val_metrics["video_auc"] + val_metrics["audio_auc"]) / 2
+                    print(f"epoch {epoch} — loss={avg_loss:.4f} val_video_auc={val_metrics['video_auc']:.4f} "
+                          f"val_audio_auc={val_metrics['audio_auc']:.4f} val_quad_acc={val_metrics['quadrant_acc']:.4f}")
+
+                    # Push best model
+                    if val_auc > best_auc:
+                        best_auc = val_auc
+                        if backup:
+                            backup.push_best(model, epoch, val_auc)
+                        print(f"  ** new best AUC: {val_auc:.4f}")
+                else:
+                    print(f"epoch {epoch} — loss={avg_loss:.4f}")
+
+                # Push to HF
+                if backup:
+                    metrics["best_auc"] = best_auc
+                    backup.push_checkpoint(model, opt, epoch, vars(cfg), metrics,
+                                           resume_extras={"best_auc": best_auc})
+                    backup.push_log({
+                        "epoch": epoch, "avg_loss": avg_loss, "steps": epoch_steps,
+                        **{k: v for k, v in metrics.items() if isinstance(v, float)},
+                        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                    })
 
         # ─── Run complete ─────────────────────────────────────────────
         final_metrics = {"epochs": cfg.epochs, "total_steps": steps, "best_auc": best_auc}
