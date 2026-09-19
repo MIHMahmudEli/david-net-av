@@ -23,7 +23,7 @@ def load_config(path: str) -> SimpleNamespace:
         feature_cache=None,   # dir of cached SSL features (Phase A); null = raw inputs
         modality_dropout=0.15,  # prob a training sample loses one stream (never both)
         shard_root=None, train_manifest="src/data/splits/train.jsonl",
-        loss_weights=dict(v=1.0, a=1.0, quad=0.5, loc=0.5, sync=0.3, disentangle=0.1),
+        loss_weights=dict(v=1.0, a=1.0, quad=0.5, loc=0.5, sync=0.1, disentangle=0.1),
     )
     defaults.update(data or {})
     return SimpleNamespace(**defaults)

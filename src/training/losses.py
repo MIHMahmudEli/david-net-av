@@ -13,7 +13,7 @@ class LossWeights:
     a: float = 1.0
     quad: float = 0.5
     loc: float = 0.5
-    sync: float = 0.3
+    sync: float = 0.1
     disentangle: float = 0.1
 
 
