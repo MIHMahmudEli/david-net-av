@@ -256,7 +256,6 @@ def train(cfg):
                 if torch.isnan(loss) or torch.isinf(loss):
                     print(f"epoch {epoch} step {steps + 1} NaN/Inf detected — skipping step")
                     opt.zero_grad(set_to_none=True)
-                    scaler.update()
                     steps += 1
                     nan_count += 1
                     if nan_count >= 5:
@@ -274,8 +273,9 @@ def train(cfg):
                         break
                 if not grad_ok:
                     print(f"epoch {epoch} step {steps + 1} NaN/Inf gradient — skipping step")
-                    opt.zero_grad(set_to_none=True)
+                    scaler.step(opt)
                     scaler.update()
+                    opt.zero_grad(set_to_none=True)
                     steps += 1
                     nan_count += 1
                     if nan_count >= 5:
