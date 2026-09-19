@@ -51,5 +51,5 @@ qacp_temperature: 0.5          # higher τ for small effective batches (smoother
                                # DO NOT use 0.1 with effective batch < 128: causes collapse
 
 # Early stopping: halt if avg_loss plateaus (saves compute + HF upload bandwidth)
-patience: 5                    # stop after this many consecutive epochs with no improvement
+patience: 8                    # stop after this many consecutive epochs with no improvement
 min_delta: 1.0e-4              # minimum relative improvement to count as "improved"

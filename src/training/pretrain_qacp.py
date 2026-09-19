@@ -75,7 +75,7 @@ def pretrain(cfg):
     keep_milestones = getattr(cfg, "keep_milestones", 3)
 
     # Early stopping: halt if avg_loss fails to improve for `patience` epochs
-    patience = getattr(cfg, "patience", 5)
+    patience = getattr(cfg, "patience", 8)
     min_delta = getattr(cfg, "min_delta", 1e-4)
 
     # ─── HF Backup setup ──────────────────────────────────────────────
@@ -111,6 +111,18 @@ def pretrain(cfg):
     model.train()
     best_loss = float("inf") if _resume is None else _resume.get("best_loss", float("inf"))
     no_improve = 0 if _resume is None else _resume.get("no_improve", 0)
+
+    # Already converged? Skip training entirely.
+    if no_improve >= patience:
+        print(f"[qacp] Already converged (no_improve={no_improve} >= patience={patience}) — skipping training")
+        if backup:
+            backup.push_log({
+                "epoch": start_epoch, "avg_loss": best_loss, "best_loss": best_loss,
+                "steps": 0, "is_best": False,
+                "skipped": True, "reason": f"already converged no_improve={no_improve}",
+                "phase": "qacp", "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            })
+        return model
 
     try:
         for epoch in range(start_epoch, cfg.epochs):
