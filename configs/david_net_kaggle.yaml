@@ -52,5 +52,5 @@ loss_weights:
   a: 1.0
   quad: 0.5
   loc: 0.5
-  sync: 0.3
+  sync: 0.1
   disentangle: 0.1
