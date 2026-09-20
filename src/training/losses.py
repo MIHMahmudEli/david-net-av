@@ -138,10 +138,14 @@ def qacp_loss(out: dict, batch: dict, temperature: float = 0.1):
     artifacts leaked through fusion layers.  The consistency term (z_c)
     is intentionally cross-modal and stays post-fusion.
     """
-    l_v = supcon_loss(out["z_v_pre"], batch["video_label"], temperature)
-    l_a = supcon_loss(out["z_a_pre"], batch["audio_label"], temperature)
-    l_c = supcon_loss(out["z_c"], batch["sync_label"], temperature) \
-        if out["z_c"].numel() else out["z_v"].new_zeros((), dtype=torch.float32)
+    # projected embeddings when the model provides them (DavidNet.qacp_proj_*), else raw
+    f_v = out.get("q_v", out["z_v_pre"])
+    f_a = out.get("q_a", out["z_a_pre"])
+    f_c = out.get("q_c", out["z_c"])
+    l_v = supcon_loss(f_v, batch["video_label"], temperature)
+    l_a = supcon_loss(f_a, batch["audio_label"], temperature)
+    l_c = supcon_loss(f_c, batch["sync_label"], temperature) \
+        if f_c.numel() else out["z_v"].new_zeros((), dtype=torch.float32)
     total = l_v + l_a + l_c
     return total, {"qacp_v": float(l_v.detach()), "qacp_a": float(l_a.detach()),
                    "qacp_c": float(l_c.detach()), "total": float(total.detach())}

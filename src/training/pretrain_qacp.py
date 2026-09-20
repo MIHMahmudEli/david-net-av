@@ -16,6 +16,7 @@ See docs/02_architecture.md §8b.
 from __future__ import annotations
 
 import argparse
+import sys
 import logging
 import math
 import os
@@ -33,6 +34,20 @@ from src.utils.config import load_config
 from src.utils.seed import set_seed
 
 logger = logging.getLogger(__name__)
+
+# Kaggle runs this through a pipe: block-buffered stdout hid the last minutes before
+# every crash. Line-buffer stdout/stderr and route DataLoader IPC through files (the
+# default shm strategy dies with a silent SIGBUS when /dev/shm is small).
+try:
+    sys.stdout.reconfigure(line_buffering=True)
+    sys.stderr.reconfigure(line_buffering=True)
+except Exception:  # noqa: BLE001
+    pass
+try:
+    import torch.multiprocessing as _mp
+    _mp.set_sharing_strategy("file_system")
+except Exception:  # noqa: BLE001
+    pass
 
 
 def pretrain(cfg):

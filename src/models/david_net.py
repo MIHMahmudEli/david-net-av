@@ -148,6 +148,14 @@ class DavidNet(nn.Module):
         # Per-frame localization (video + audio)
         self.loc_v = nn.Linear(d, 1)
         self.loc_a = nn.Linear(d, 1)
+        # QACP projection heads (SupCon/SimCLR convention): the contrastive loss is taken
+        # on g(z), not on z itself. Mean-pooled backbone tokens share a large common
+        # direction, so cos-sim between raw pooled embeddings is ~1 for every pair and
+        # SupCon sits at ln(B-1) forever (observed: video + sync terms at chance for 15
+        # epochs). A small MLP removes the common mode in a few steps. Unused in Stage 1.
+        self.qacp_proj_v = nn.Sequential(nn.Linear(d, d), nn.GELU(), nn.Linear(d, 128))
+        self.qacp_proj_a = nn.Sequential(nn.Linear(d, d), nn.GELU(), nn.Linear(d, 128))
+        self.qacp_proj_c = nn.Sequential(nn.Linear(c if c else d, d), nn.GELU(), nn.Linear(d, 128))
 
     def forward(self, video, audio, v_avail=None, a_avail=None) -> dict:
         """v_avail / a_avail: optional (B,) float masks, 1 = modality present.
@@ -199,10 +207,15 @@ class DavidNet(nn.Module):
         else:
             logit_quad = self.head_quad(torch.cat([z_v, z_a, z_c], dim=-1))
 
+        q_v = self.qacp_proj_v(z_v_pre)
+        q_a = self.qacp_proj_a(z_a_pre)
+        q_c = self.qacp_proj_c(z_c) if z_c.size(-1) else z_c
+
         return {
             "logit_v": logit_v,
             "logit_a": logit_a,
             "logit_quad": logit_quad,
+            "q_v": q_v, "q_a": q_a, "q_c": q_c,
             "loc_v": self.loc_v(v).squeeze(-1),   # (B, Lv)
             "loc_a": self.loc_a(a).squeeze(-1),   # (B, La)
             "agreement": agreement,

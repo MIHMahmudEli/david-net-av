@@ -19,6 +19,7 @@ tensors and then NaN-looped for 29 epochs without stopping):
 from __future__ import annotations
 
 import argparse
+import sys
 import copy
 import logging
 import math
@@ -40,6 +41,20 @@ from src.utils.config import load_config
 from src.utils.seed import set_seed
 
 logger = logging.getLogger(__name__)
+
+# Kaggle runs this through a pipe: block-buffered stdout hid the last minutes before
+# every crash. Line-buffer stdout/stderr and route DataLoader IPC through files (the
+# default shm strategy dies with a silent SIGBUS when /dev/shm is small).
+try:
+    sys.stdout.reconfigure(line_buffering=True)
+    sys.stderr.reconfigure(line_buffering=True)
+except Exception:  # noqa: BLE001
+    pass
+try:
+    import torch.multiprocessing as _mp
+    _mp.set_sharing_strategy("file_system")
+except Exception:  # noqa: BLE001
+    pass
 
 
 def build_model(cfg) -> DavidNet:
@@ -394,6 +409,13 @@ def train(cfg):
                 if max_micro and it >= max_micro:
                     break
                 seen += batch["video"].size(0)
+                if it % 10 == 0:   # heartbeat: last batch seen before any silent death
+                    try:
+                        with open(os.path.join(cfg.out_dir, f"heartbeat_{run_id or 'run'}.txt"), "w") as hb:
+                            hb.write(f"{time.strftime('%H:%M:%S')} epoch={epoch} micro={it} opt={opt_steps} "
+                                     f"clips={batch['clip_id']}\n")
+                    except Exception:  # noqa: BLE001
+                        pass
                 batch = move(batch, device)
                 batch = augment_batch(batch, v_aug, a_aug)
                 v_av, a_av = availability_masks(batch, cfg.modality_dropout)
