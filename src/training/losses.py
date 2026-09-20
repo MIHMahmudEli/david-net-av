@@ -147,6 +147,26 @@ def qacp_loss(out: dict, batch: dict, temperature: float = 0.1):
                    "qacp_c": float(l_c.detach()), "total": float(total.detach())}
 
 
+def distillation_loss(out: dict, teacher_out: dict, temperature: float = 2.0):
+    """Soft-target distillation for DAVID-Net-Lite: BCE against the teacher's
+    per-modality probabilities and KL against its quadrant distribution (both at
+    temperature T). Localization heads are matched with a per-frame BCE after
+    resampling to the student's token length."""
+    T = temperature
+    l = 0.0
+    for k in ("logit_v", "logit_a"):
+        t = torch.sigmoid(teacher_out[k].float() / T)
+        l = l + F.binary_cross_entropy_with_logits(out[k].float() / T, t) * (T * T)
+    p_t = F.softmax(teacher_out["logit_quad"].float() / T, dim=-1)
+    l = l + F.kl_div(F.log_softmax(out["logit_quad"].float() / T, dim=-1), p_t, reduction="batchmean") * (T * T)
+    for k in ("loc_v", "loc_a"):
+        s_, t_ = out[k].float(), teacher_out[k].float()
+        if s_.size(1) != t_.size(1):
+            t_ = F.interpolate(t_.unsqueeze(1), size=s_.size(1), mode="linear", align_corners=False).squeeze(1)
+        l = l + 0.5 * F.binary_cross_entropy_with_logits(s_, torch.sigmoid(t_))
+    return l
+
+
 def total_loss(out: dict, batch: dict, w: LossWeights, model=None):
     v_t = batch["video_label"].float()
     a_t = batch["audio_label"].float()

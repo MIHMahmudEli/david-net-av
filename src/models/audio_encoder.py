@@ -98,7 +98,11 @@ class SpecCNNFallbackAudioEncoder(nn.Module):
 
 
 def build_audio_encoder(cfg) -> nn.Module:
-    if getattr(cfg, "audio_backbone", "fallback") == "wavlm":
-        return WavLMEncoder(cfg.d_model, cfg.audio_model_name, cfg.freeze_feature_extractor,
-                            getattr(cfg, "freeze_blocks", 8))
+    """`audio_backbone: wavlm` covers any HF speech SSL model with a conv feature
+    extractor + transformer encoder (WavLM, HuBERT, DistilHuBERT, wav2vec2)."""
+    if getattr(cfg, "audio_backbone", "fallback") in ("wavlm", "hubert", "hf"):
+        n_freeze = getattr(cfg, "freeze_blocks_audio", None)
+        if n_freeze is None:
+            n_freeze = getattr(cfg, "freeze_blocks", 8)
+        return WavLMEncoder(cfg.d_model, cfg.audio_model_name, cfg.freeze_feature_extractor, n_freeze)
     return SpecCNNFallbackAudioEncoder(cfg.d_model)

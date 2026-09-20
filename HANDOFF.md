@@ -273,17 +273,23 @@ sweep and `scripts/paper_artifacts.py`, which pushes to HF `MoshinAli/david-net-
 training_curves,per_generator}.{pdf,png}`; copy `figures/` into `report/figures/generated/`.
 Cell 14 (`scripts/publish_model.py`) publishes weights + config + model card + `api/` to the
 PUBLIC repo `MoshinAli/david-net-av`; the FastAPI Space pulls `david_net.pt` from there.
-Cells 13–17 produce the remaining experiments, each as a resumable HF `run_id`:
+Cells 13–18 produce the remaining experiments, each as a resumable HF `run_id`:
 Cell 14 explainability (Fig. C, `src/eval/explain.py`: SmoothGrad saliency on frames +
 spectrogram, sync curve, localization), Cell 15 baselines (`baseline_*.json`, same split/metrics),
 Cell 16 ablations (`abl_<name>_v2_seed42`, Table 5 + `results_ablation`), Cell 17 LOGO
 (`logo_<family>_v2_seed42`, Table 3; families = wav2lip incl. hybrids / fsgan / faceswap / rtvc,
-subject-disjoint test identities). Fairness (Table 6) needs no extra compute — race/gender
+subject-disjoint test identities), Cell 18 DAVID-Net-Lite (`qacp_lite_v2` + `stage1_lite_v2_seed42`,
+VideoMAE-Small + DistilHuBERT with logit distillation from the seed-42 full model; feeds
+Table 7 and the public repo `MoshinAli/david-net-av-lite`, which the Space serves by default).
+Table 4 (localization AP@IoU) was DROPPED from the report on 2026-09-20: FakeAVCeleb has
+only whole-clip manipulations; the qualitative localization + explainability figures remain.
+Fairness (Table 6) needs no extra compute — race/gender
 ride along in the eval predictions and `paper_artifacts.py` writes `fairness.json`.
 
 **GPU-hour budget (T4, ~50 min per Stage-1 epoch on the 15k train split — measure it on
 your first epoch and rescale):** main run 3 seeds × 10 ep ≈ 25 h · ablations 4 × 4 ep ≈ 13 h ·
-LOGO 4 × 4 ep ≈ 10 h · baselines ≈ 4 h · robustness/explain/artifacts ≈ 1 h → **≈ 55 GPU-h**,
+LOGO 4 × 4 ep ≈ 10 h · baselines ≈ 4 h · Lite (QACP 8 ep + 10 ep, ~3× cheaper) ≈ 5 h ·
+robustness/explain/artifacts ≈ 1 h → **≈ 60 GPU-h**,
 i.e. two weekly Kaggle quotas on one account or one week on two accounts (HF resume is
 account-agnostic — same `run_id`, same `HF_TOKEN` secret). Suggested session order:
 (1) QACP + seed 42 → (2) seeds 123/456 → (3) Cell 12 eval + Cells 14/15/18/19 (first complete

@@ -166,7 +166,7 @@ Learned from the first Kaggle run (T4 = fp16 autocast, no BF16):
 
 ## 10. Complexity / deployment notes
 
-- Provide two configs: **DAVID-Net-Base** (research, VideoMAE-Base + WavLM-Base+) and **DAVID-Net-Lite** (EfficientNet-frame-aggregator + WavLM-Base, for the public HF demo / CPU-friendly inference).
+- Two configs: **DAVID-Net-Base** (research, VideoMAE-Base + WavLM-Base+, d=768, 4 fusion layers; `configs/david_net_kaggle.yaml`) and **DAVID-Net-Lite** (`configs/david_net_lite.yaml`: VideoMAE-Small + DistilHuBERT, d=384, 2 fusion layers, same two-stage recipe + logit distillation from the Base best checkpoint via `distill_from`/`distill_weight`; served by the HF Space, repo `MoshinAli/david-net-av-lite`).
 - Inference on a 4 s clip target: < 2 s on a T4 GPU for Base; the Lite model targets CPU-only Spaces.
 
 ## 11. Explainability outputs (for the paper and the UI)

@@ -179,41 +179,73 @@ def per_generator_table(reports: dict, run_ids: list[str], in_domain: str) -> di
     return table
 
 
-def efficiency(config_path: Path | None, checkpoint: Path | None) -> dict:
+def efficiency(config_path: Path | None, checkpoint: Path | None, measure_cpu: bool = True) -> dict:
+    """Params, checkpoint size, GPU latency/throughput and (optionally) CPU throughput."""
     info = {}
     if checkpoint and checkpoint.exists():
         info["checkpoint_gb"] = round(checkpoint.stat().st_size / 1e9, 3)
-    if config_path and config_path.exists():
-        try:
-            import torch
-            from src.utils.config import load_config
-            from src.training.train import build_model
-            cfg = load_config(str(config_path))
-            model = build_model(cfg)
-            info["params_total"] = sum(p.numel() for p in model.parameters())
-            info["params_trainable_stage1"] = sum(p.numel() for p in model.parameters() if p.requires_grad)
-            dev = "cuda" if torch.cuda.is_available() else "cpu"
-            model = model.to(dev).eval()
+    if not (config_path and config_path.exists()):
+        return info
+    try:
+        import torch
+        from src.utils.config import load_config
+        from src.training.train import build_model
+        cfg = load_config(str(config_path))
+        cfg.feature_cache = None
+        model = build_model(cfg).eval()
+        info["params_total"] = sum(p.numel() for p in model.parameters())
+        info["params_trainable_stage1"] = sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+        def _bench(dev, n, amp):
+            m = model.to(dev)
             v = torch.rand(1, cfg.n_frames, 3, 224, 224, device=dev)
             a = torch.rand(1, cfg.audio_len, device=dev)
-            with torch.no_grad(), torch.amp.autocast("cuda", enabled=(dev == "cuda")):
-                for _ in range(3):
-                    model(v, a)
+            with torch.no_grad(), torch.amp.autocast("cuda", enabled=amp):
+                for _ in range(2):
+                    m(v, a)
                 if dev == "cuda":
                     torch.cuda.synchronize()
                 t0 = time.time()
-                n = 10
                 for _ in range(n):
-                    model(v, a)
+                    m(v, a)
                 if dev == "cuda":
                     torch.cuda.synchronize()
-            info["latency_ms_per_clip"] = round((time.time() - t0) / n * 1000, 1)
-            info["latency_device"] = torch.cuda.get_device_name(0) if dev == "cuda" else "cpu"
-            if dev == "cuda":
-                info["peak_vram_gb_inference"] = round(torch.cuda.max_memory_allocated() / 1e9, 2)
-        except Exception as e:  # noqa: BLE001
-            info["error"] = str(e)[:200]
+            return (time.time() - t0) / n
+
+        if torch.cuda.is_available():
+            torch.cuda.reset_peak_memory_stats()
+            sec = _bench("cuda", 10, True)
+            info["latency_ms_per_clip_gpu"] = round(sec * 1000, 1)
+            info["throughput_clips_per_s_gpu"] = round(1 / sec, 2)
+            info["gpu"] = torch.cuda.get_device_name(0)
+            info["peak_vram_gb_inference"] = round(torch.cuda.max_memory_allocated() / 1e9, 2)
+        if measure_cpu:
+            torch.set_num_threads(max(1, os.cpu_count() or 1))
+            sec = _bench("cpu", 3, False)
+            info["latency_ms_per_clip_cpu"] = round(sec * 1000, 1)
+            info["throughput_clips_per_s_cpu"] = round(1 / sec, 3)
+            info["cpu_threads"] = torch.get_num_threads()
+    except Exception as e:  # noqa: BLE001
+        info["error"] = str(e)[:300]
     return info
+
+
+def model_summary_row(reports: dict, run_ids: list[str], in_domain: str) -> dict:
+    """In-domain V/A AUC and mean cross-dataset AUC for a set of runs (Table 7 rows)."""
+    v, a, cross = [], [], []
+    for run in run_ids:
+        r = reports.get((run, in_domain))
+        if r:
+            v.append(r["video"]["auc"]); a.append(r["audio"]["auc"])
+        for (rr_run, ds), rr in reports.items():
+            if rr_run != run or ds == in_domain:
+                continue
+            for mod in ("video", "audio"):
+                x = rr[mod]["auc"]
+                if not _nan(x):
+                    cross.append(x)
+    f = lambda xs: float(np.mean([x for x in xs if not _nan(x)])) if any(not _nan(x) for x in xs) else float("nan")
+    return {"video_auc": f(v), "audio_auc": f(a), "cross_dataset_auc_mean": f(cross), "n_runs": len(run_ids)}
 
 
 # ------------------------------------------------------------------ extra experiments
@@ -370,9 +402,23 @@ def latex_tables(summary: dict, per_gen: dict, eff: dict, in_domain: str,
             L.append(f"% {attr}: max AUC gap video={_fmt(table.get('video', {}).get('_max_auc_gap'))} "
                      f"audio={_fmt(table.get('audio', {}).get('_max_auc_gap'))}")
         L.append("")
-    L.append("% ===== Table 7: efficiency")
-    L.append(f"% params total = {eff.get('params_total', '?')}, trainable (Stage 1) = {eff.get('params_trainable_stage1', '?')}, "
-             f"checkpoint = {eff.get('checkpoint_gb', '?')} GB, latency = {eff.get('latency_ms_per_clip', '?')} ms/clip on {eff.get('latency_device', '?')}")
+    L.append("% ===== Table 7: efficiency — full model vs DAVID-Net-Lite (rows = report tab:efficiency)")
+    full, lite = eff.get("full", {}), eff.get("lite", {})
+    def _m(d, k, digits=1):
+        x = d.get(k)
+        return "--" if x is None else (f"{x:.{digits}f}" if isinstance(x, float) else str(x))
+    def _mm(d, k):
+        x = d.get(k)
+        return "--" if x is None else f"{x / 1e6:.0f}M"
+    def _auc(d, k):
+        return _fmt((d.get("summary") or {}).get(k))
+    L.append(f"Parameters (trainable / total) & {_mm(full, 'params_trainable_stage1')} / {_mm(full, 'params_total')} & {_mm(lite, 'params_trainable_stage1')} / {_mm(lite, 'params_total')}" + ROW_END)
+    L.append(f"In-domain AUC (video / audio) & {_auc(full, 'video_auc')} / {_auc(full, 'audio_auc')} & {_auc(lite, 'video_auc')} / {_auc(lite, 'audio_auc')}" + ROW_END)
+    L.append(f"Cross-dataset AUC (mean) & {_auc(full, 'cross_dataset_auc_mean')} & {_auc(lite, 'cross_dataset_auc_mean')}" + ROW_END)
+    L.append(f"Latency per 4-s clip ({full.get('gpu', 'GPU')}) & {_m(full, 'latency_ms_per_clip_gpu')}\\,ms & {_m(lite, 'latency_ms_per_clip_gpu')}\\,ms" + ROW_END)
+    L.append(f"Throughput (GPU) & {_m(full, 'throughput_clips_per_s_gpu', 2)} clips/s & {_m(lite, 'throughput_clips_per_s_gpu', 2)} clips/s" + ROW_END)
+    L.append(f"Throughput (CPU, {full.get('cpu_threads', '?')} threads) & {_m(full, 'throughput_clips_per_s_cpu', 3)} clips/s & {_m(lite, 'throughput_clips_per_s_cpu', 3)} clips/s" + ROW_END)
+    L.append(f"Checkpoint size & {_m(full, 'checkpoint_gb', 2)} GB & {_m(lite, 'checkpoint_gb', 2)} GB" + ROW_END)
     return "\n".join(L) + "\n"
 
 
@@ -489,6 +535,9 @@ def main():
     ap.add_argument("--ablation-run-ids", nargs="*", default=[], help="abl_<name>_v2_seed42 ...")
     ap.add_argument("--logo-run-ids", nargs="*", default=[], help="logo_<family>_v2_seed42 ...")
     ap.add_argument("--explain-dir", default=None, help="dir with results_explain_*.{pdf,png}")
+    ap.add_argument("--lite-run-id", default=None, help="stage1_lite_v2_seed42")
+    ap.add_argument("--lite-config", default=None)
+    ap.add_argument("--lite-checkpoint", default=None)
     ap.add_argument("--push", action="store_true")
     args = ap.parse_args()
 
@@ -497,7 +546,8 @@ def main():
     (out / "metrics").mkdir(exist_ok=True); (out / "configs").mkdir(exist_ok=True)
     token = os.environ.get("HF_TOKEN") or os.environ.get("hf")
 
-    reports = collect_evals(work, args.run_ids + args.ablation_run_ids + args.logo_run_ids, token)
+    lite_ids = [args.lite_run_id] if args.lite_run_id else []
+    reports = collect_evals(work, args.run_ids + args.ablation_run_ids + args.logo_run_ids + lite_ids, token)
     print(f"{len(reports)} eval reports:", sorted(reports))
     if not reports:
         raise SystemExit("no eval reports found — run the evaluation cell first")
@@ -506,7 +556,13 @@ def main():
 
     summary = summarize(reports, args.run_ids, args.in_domain)
     per_gen = per_generator_table(reports, args.run_ids, args.in_domain)
-    eff = efficiency(Path(args.config) if args.config else None, Path(args.checkpoint) if args.checkpoint else None)
+    eff = {"full": efficiency(Path(args.config) if args.config else None,
+                              Path(args.checkpoint) if args.checkpoint else None)}
+    eff["full"]["summary"] = model_summary_row(reports, args.run_ids, args.in_domain)
+    if args.lite_run_id:
+        eff["lite"] = efficiency(Path(args.lite_config) if args.lite_config else None,
+                                 Path(args.lite_checkpoint) if args.lite_checkpoint else None)
+        eff["lite"]["summary"] = model_summary_row(reports, lite_ids, args.in_domain)
     baselines = collect_baselines(work)
     ablations = ablation_rows(reports, args.run_ids, args.ablation_run_ids, args.in_domain) if args.ablation_run_ids else None
     logo = logo_rows(reports, args.logo_run_ids) if args.logo_run_ids else None

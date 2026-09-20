@@ -1,0 +1,63 @@
+# DAVID-Net-Lite: the deployable variant (docs/02_architecture.md §10, report Table 7).
+# Smaller SSL backbones + narrower fusion, trained with the same two-stage recipe and
+# logit distillation from the full model's best checkpoint (distill_from).
+#   video : MCG-NJU/videomae-small-finetuned-kinetics  (hidden 384, 12 blocks, ~22M)
+#   audio : ntu-spml/distilhubert                       (hidden 768, 2 blocks,  ~24M)
+#   fusion: d_model 384, 2 cross-modal layers
+seed: 42
+run_id: stage1_lite_v2_seed42
+
+d_model: 384
+n_heads: 6
+n_fusion_layers: 2
+dropout: 0.1
+use_sync: true
+use_disentangle: true
+compose_quadrant: false
+
+video_backbone: videomae
+audio_backbone: wavlm              # generic HF speech-SSL wrapper (HuBERT family included)
+video_model_name: MCG-NJU/videomae-small-finetuned-kinetics
+audio_model_name: ntu-spml/distilhubert
+freeze_blocks: 6                   # video: freeze bottom 6 of 12
+freeze_blocks_audio: 0             # audio: DistilHuBERT has 2 blocks -> train both
+freeze_feature_extractor: true
+
+init_from: null                    # QACP-lite checkpoint (set by the notebook)
+distill_from: null                 # full model best.pt (set by the notebook); null = no KD
+distill_weight: 0.5
+distill_temperature: 2.0
+
+n_frames: 16
+audio_len: 64000
+shard_root: null
+feature_cache: null
+root_dir: /kaggle/input/datasets/aicontentdetections/fakeavceleb-v1-2/FakeAVCeleb_v1.2
+train_manifest: /kaggle/working/splits/fakeavceleb/train.jsonl
+val_manifest: /kaggle/working/splits/fakeavceleb/val.jsonl
+modality_dropout: 0.15
+
+batch_size: 8
+grad_accum_steps: 2
+num_workers: 4
+epochs: 10
+lr: 2.0e-4
+lr_encoder: 2.0e-5
+weight_decay: 1.0e-4
+max_grad_norm: 1.0
+warmup_epochs: 1
+gradient_checkpointing: true
+augment: true
+nan_patience: 5
+max_nan_restores: 3
+log_every: 25
+out_dir: runs
+local_dir: /kaggle/working
+
+loss_weights:
+  v: 1.0
+  a: 1.0
+  quad: 0.5
+  loc: 0.5
+  sync: 0.1
+  disentangle: 0.1

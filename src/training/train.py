@@ -35,7 +35,7 @@ from src.data.augment import VideoAugmentor, AudioAugmentor, augment_batch
 from src.models.david_net import DavidNet, DavidNetConfig
 from src.models.video_encoder import build_video_encoder
 from src.models.audio_encoder import build_audio_encoder
-from src.training.losses import LossWeights, total_loss
+from src.training.losses import LossWeights, total_loss, distillation_loss
 from src.utils.config import load_config
 from src.utils.seed import set_seed
 
@@ -251,6 +251,26 @@ def train(cfg):
     if getattr(cfg, "gradient_checkpointing", True):
         enable_gradient_checkpointing(model)
 
+    # Optional teacher for DAVID-Net-Lite: a full-size checkpoint whose saved cfg
+    # rebuilds its own architecture; frozen, eval, forward only.
+    teacher = None
+    distill_w = float(getattr(cfg, "distill_weight", 0.0) or 0.0)
+    distill_T = float(getattr(cfg, "distill_temperature", 2.0) or 2.0)
+    if getattr(cfg, "distill_from", None) and distill_w > 0:
+        t_state = torch.load(cfg.distill_from, map_location="cpu", weights_only=False)
+        if "cfg" not in t_state:
+            raise RuntimeError("distill_from checkpoint has no saved cfg (need best.pt/last.pt from train.py)")
+        from types import SimpleNamespace
+        t_cfg = SimpleNamespace(**t_state["cfg"])
+        t_cfg.feature_cache = None
+        teacher = build_model(t_cfg)
+        teacher.load_state_dict(t_state["model"])
+        teacher = teacher.to(device).eval()
+        for p in teacher.parameters():
+            p.requires_grad_(False)
+        print(f"Distillation teacher loaded from {cfg.distill_from} "
+              f"({sum(p.numel() for p in teacher.parameters()):,} params), weight={distill_w}, T={distill_T}")
+
     weights = LossWeights(**cfg.loss_weights)
 
     # Separate param groups: heads/fusion vs encoder adapters
@@ -343,6 +363,13 @@ def train(cfg):
                 with torch.amp.autocast("cuda", enabled=(device == "cuda")):
                     out = model(batch["video"], batch["audio"], v_avail=v_av, a_avail=a_av)
                 loss, parts = total_loss(out, batch, weights, model=model)
+                if teacher is not None:
+                    with torch.no_grad(), torch.amp.autocast("cuda", enabled=(device == "cuda")):
+                        t_out = teacher(batch["video"], batch["audio"], v_avail=v_av, a_avail=a_av)
+                    l_kd = distillation_loss(out, t_out, distill_T)
+                    loss = loss + distill_w * l_kd
+                    parts["kd"] = float(l_kd.detach())
+                    parts["total"] = float(loss.detach())
                 micro_steps += 1
 
                 if not torch.isfinite(loss):

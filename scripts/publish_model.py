@@ -55,7 +55,8 @@ library_name: pytorch
 pipeline_tag: video-classification
 ---
 
-# DAVID-Net — Disentangled Audio-Visual Deepfake Detector
+# DAVID-Net{"-Lite" if "lite" in repo.lower() else ""} — Disentangled Audio-Visual Deepfake Detector
+{"**DAVID-Net-Lite** is the deployable variant: VideoMAE-small + DistilHuBERT backbones, 2 fusion layers (d=384), trained with the same two-stage recipe and logit distillation from the full model. Use `MoshinAli/david-net-av` for the full research model." if "lite" in repo.lower() else "The deployable **DAVID-Net-Lite** variant lives at `MoshinAli/david-net-av-lite`."}
 
 Per-modality deepfake detection: given a clip, DAVID-Net decides **independently** whether
 the **video** stream and the **audio** stream are real or AI-generated, assigns one of four
@@ -87,7 +88,8 @@ sweeps and training curves are in the thesis artifacts.
 # pip install torch transformers huggingface_hub opencv-python-headless  (+ ffmpeg on PATH)
 # git clone https://github.com/MIHMahmudEli/david-net-av && cd david-net-av
 from api.inference import DavidNetInference
-engine = DavidNetInference(config="configs/david_net_kaggle.yaml")   # weights auto-download from {repo}
+import os; os.environ["DAVID_HF_REPO"] = "{repo}"                    # weights auto-download from the Hub
+engine = DavidNetInference(config="configs/{'david_net_lite' if 'lite' in repo.lower() else 'david_net_kaggle'}.yaml")
 print(engine.predict("clip.mp4"))          # video + audio verdicts, quadrant, sync, timelines
 print(engine.predict_audio("voice.wav"))   # audio-only input
 ```
@@ -155,7 +157,7 @@ def main():
     root = Path(args.repo_root)
     if (root / "api").exists():
         shutil.copytree(root / "api", stage / "api", ignore=shutil.ignore_patterns("__pycache__"))
-    for c in ("david_net_kaggle.yaml", "david_net.yaml"):
+    for c in ("david_net_kaggle.yaml", "david_net_lite.yaml", "david_net.yaml"):
         if (root / "configs" / c).exists():
             (stage / "configs").mkdir(exist_ok=True)
             shutil.copy2(root / "configs" / c, stage / "configs" / c)

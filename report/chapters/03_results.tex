@@ -269,38 +269,20 @@ $-$ localization head            & \dummy{0.985\,$\pm$\,0.002} & \dummy{0.834\,$
 \subsection{Temporal Localization (RQ4)}
 \label{sec:res-localization}
 
-Table~\ref{tab:localization} evaluates per-frame manipulation localization
-against the strongest published localizers under the AV-Deepfake1M protocol.
-The proposed framework improves AP@0.5 to \dummy{0.562\,$\pm$\,0.014} on
-AV-Deepfake1M and \dummy{0.981\,$\pm$\,0.003} on LAV-DF. Two properties
-distinguish it from the baselines beyond the scores: localization is
-predicted \emph{per modality} (a capability the baselines lack---they emit a
-single joint timeline), and the same network simultaneously provides the
-clip-level attribution of Section~\ref{sec:res-indomain}, whereas BA-TFD+
-and UMMAFormer are dedicated localizers. A qualitative example is shown in
-Figure~\ref{fig:localization}: the per-frame probability rises sharply
-inside the manipulated interval and returns to baseline outside it, and the
-audio timeline remains flat for an FVRA clip, illustrating genuinely
-modality-resolved localization.
-
-\begin{table}[htbp]
-\centering
-\caption{Temporal localization: AP@IoU on AV-Deepfake1M and LAV-DF test
-splits. Draft placeholders in \textcolor{blue}{blue}.}
-\label{tab:localization}
-\small
-\begin{tabular}{lcccccc}
-\toprule
- & \multicolumn{3}{c}{\textbf{AV-Deepfake1M}} & \multicolumn{3}{c}{\textbf{LAV-DF}} \\
-\cmidrule(lr){2-4}\cmidrule(lr){5-7}
-\textbf{Method} & AP@0.5 & AP@0.75 & AP@0.95 & AP@0.5 & AP@0.75 & AP@0.95 \\
-\midrule
-BA-TFD+~\cite{cai2023batfdplus}       & \dummy{0.442} & \dummy{0.196} & \dummy{0.041} & \dummy{0.968} & \dummy{0.841} & \dummy{0.283} \\
-UMMAFormer~\cite{zhang2023ummaformer} & \dummy{0.513} & \dummy{0.287} & \dummy{0.069} & \dummy{0.975} & \dummy{0.868} & \dummy{0.324} \\
-\textbf{Proposed (per-modality)}      & \dummy{\textbf{0.562}} & \dummy{\textbf{0.331}} & \dummy{\textbf{0.088}} & \dummy{\textbf{0.981}} & \dummy{\textbf{0.887}} & \dummy{\textbf{0.351}} \\
-\bottomrule
-\end{tabular}
-\end{table}
+FakeAVCeleb manipulations are whole-clip, so the corpus supports a
+qualitative rather than an interval-level (AP@IoU) assessment of the
+localization heads; the segment-annotated corpora that would enable the
+latter (AV-Deepfake1M, LAV-DF) exceeded the storage budget of the training
+environment and are left for future work (see the Conclusion).
+Two properties nevertheless distinguish the localization heads from the
+published localizers: the timeline is predicted \emph{per modality}, and
+the same network simultaneously provides the clip-level attribution of
+Section~\ref{sec:res-indomain}. A qualitative example is shown in
+Figure~\ref{fig:localization}: the per-frame probability is uniformly high
+across a whole-clip manipulation and returns to baseline on the pristine
+stream, and Figure~\ref{fig:explain} pairs the same timelines with the
+input attributions and the synchronization-agreement curve of the sync
+module.
 
 \IfFileExists{figures/generated/results_localization.pdf}{%
 \begin{figure}[htbp]
@@ -445,10 +427,15 @@ Ethnicity & Caucasian (European) & \dummy{865}  & \dummy{0.984} & \dummy{0.988} 
 \subsection{Efficiency and the Deployed Variant}
 \label{sec:res-efficiency}
 
-Table~\ref{tab:efficiency} compares the research model against the distilled
-DAVID-Net-Lite that backs the public web service. The Lite variant retains
+Table~\ref{tab:efficiency} compares the research model against
+DAVID-Net-Lite, the variant that backs the public web service. Lite keeps
+the architecture and both training stages but swaps the backbones for
+VideoMAE-Small and DistilHuBERT, narrows the fusion to two layers of width
+384, and adds logit distillation from the full model's best checkpoint
+(soft targets for both authenticity heads, the quadrant distribution and
+the localization timelines). The Lite variant retains
 \dummy{97.2}\% of the full model's in-domain AUC and \dummy{93.5}\% of its
-cross-dataset AUC at \dummy{17}\% of the parameter count, sustaining
+cross-dataset AUC at \dummy{19}\% of the parameter count, sustaining
 \dummy{14}~clips per second on a T4-class GPU and \dummy{1.8}~clips per
 second on the free CPU tier---sufficient for interactive single-clip
 verification. This trade-off analysis reflects realistic product
@@ -464,12 +451,13 @@ placeholders in \textcolor{blue}{blue}.}
 \toprule
  & \textbf{DAVID-Net (full)} & \textbf{DAVID-Net-Lite} \\
 \midrule
-Parameters (trainable / total) & \dummy{66M / 184M} & \dummy{31M / 31M} \\
+Parameters (trainable / total) & \dummy{144M / 263M} & \dummy{40M / 50M} \\
 In-domain AUC (video/audio)    & \dummy{0.986 / 0.991} & \dummy{0.958 / 0.964} \\
 Cross-dataset AUC (mean)       & \dummy{0.845} & \dummy{0.790} \\
-Latency per 10-s clip (T4 GPU) & \dummy{310\,ms} & \dummy{71\,ms} \\
+Latency per 4-s clip (T4 GPU) & \dummy{310\,ms} & \dummy{71\,ms} \\
 Throughput (T4 GPU)            & \dummy{3.2 clips/s} & \dummy{14 clips/s} \\
 Throughput (CPU, HF free tier) & \dummy{0.4 clips/s} & \dummy{1.8 clips/s} \\
+Checkpoint size & \dummy{1.05\,GB} & \dummy{0.20\,GB} \\
 \bottomrule
 \end{tabular}
 \end{table}
