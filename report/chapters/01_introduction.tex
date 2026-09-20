@@ -113,7 +113,12 @@ localized artifact attention with quality-agnostic training~\cite{nguyen2024laan
 style-latent temporal flows expose the unnaturally stable style dynamics of
 generated faces~\cite{choi2024stylelatent}, and Ba et
 al.~\cite{ba2024exposing} extract complementary forgery clues through an
-information-bottleneck objective. The systematic DeepfakeBench
+information-bottleneck objective. FreqBlender transfers the proxy-forgery idea
+to the frequency domain by blending forgery-specific spectral components into
+pristine faces~\cite{li2024freqblender}, natural-consistency
+representations are learned from real videos alone~\cite{zhang2024naturalconsistency},
+and facial-component-guided adaptation of a frozen foundation model
+improves cross-dataset transfer~\cite{han2025facialcomponent}. The systematic DeepfakeBench
 evaluation~\cite{yan2023deepfakebench} nevertheless shows that even these
 detectors lose 10--25 AUC points under dataset shift---and all of them are
 blind to audio manipulation.
@@ -132,14 +137,23 @@ architectures, Codecfake~\cite{xie2024codecfake} targets neural-codec
 synthesizers directly, and SpoofCeleb~\cite{jung2025spoofceleb} sources
 spoofing data from in-the-wild speech. On the modeling side,
 style--linguistics mismatch~\cite{zhu2024slim} improves generalization to
-unseen spoofing families. Audio-only methods, however, cannot detect facial
-manipulation.
+unseen spoofing families, and Nes2Net shows that a lightweight nested head on
+frozen foundation-model features is sufficient for state-of-the-art
+anti-spoofing~\cite{liu2025nes2net}. At the same time, Shih et
+al.~\cite{shih2024artifacts} show that such detectors lean on low-level
+synthesis artifacts that do not survive re-encoding---a warning that shapes the
+robustness protocol of this thesis. Audio-only methods, however, cannot detect
+facial manipulation.
 
 \textbf{Audio-visual binary detection.} Multimodal detectors fuse both streams
 but almost universally emit one label: the Modality Dissonance
 Score~\cite{chugh2020mds}, affective-cue matching~\cite{mittal2020emotions},
 and transformer fusion models such as AVFakeNet~\cite{ilyas2023avfakenet} and
-AVoiD-DF~\cite{yang2023avoiddf}. The strongest recent representative,
+AVoiD-DF~\cite{yang2023avoiddf}, and ensembles of audio, visual and
+audio-visual experts such as AVTENet~\cite{hashmi2025avtenet}. Temporal
+variants exploit local audio-visual inconsistencies~\cite{astrid2025localtemporal}
+or, for lip-syncing forgeries specifically, the temporal disagreement between
+mouth motion and speech~\cite{liu2024lipslying}. The strongest recent representative,
 AVFF~\cite{oorloff2024avff}, learns audio-visual correspondences with a
 two-stage self-supervised objective before supervised fusion and reports
 state-of-the-art accuracy on FakeAVCeleb---yet still collapses its output to
@@ -155,8 +169,11 @@ consistent. LAV-DF~\cite{cai2022lavdf} and
 AV-Deepfake1M~\cite{cai2023avdeepfake1m} introduced content-driven temporal
 forgery localization; BA-TFD+~\cite{cai2023batfdplus} and
 UMMAFormer~\cite{zhang2023ummaformer} are the strongest published localizers,
-and DiMoDif~\cite{koutlis2024dimodif} exploits speech-perception
-discrepancies between the modalities for detection and localization.
+DiMoDif~\cite{koutlis2024dimodif} exploits speech-perception
+discrepancies between the modalities for detection and localization, and
+contextual cross-modal attention~\cite{katamneni2024contextual} jointly scores
+clips and frames; AV-Deepfake1M++~\cite{cai2025avdeepfake1mpp} adds real-world
+perturbations to the localization benchmark.
 Localization, however, is usually predicted \emph{jointly} over modalities
 rather than per stream, and cross-dataset generalization of localizers is
 under-reported.
@@ -176,7 +193,13 @@ state---are manufactured from pristine data.
 \textbf{Benchmarks and in-the-wild evaluation.} Standardized evaluation has
 matured through DeepfakeBench~\cite{yan2023deepfakebench}, the 1M-Deepfakes
 detection challenge~\cite{cai2024challenge}, and
-Deepfake-Eval-2024~\cite{chandra2025deepfakeeval}. Their shared conclusion is
+Deepfake-Eval-2024~\cite{chandra2025deepfakeeval}. Smeu et
+al.~\cite{smeu2025shortcuts} further show that audio-visual deepfake datasets,
+FakeAVCeleb included, contain shortcuts (for example, leading silence and
+duration statistics of the manipulated audio) that inflate in-domain
+accuracy, and a reliability-oriented survey argues that calibration and
+robustness must be reported alongside accuracy~\cite{wang2024reliabilitysurvey}.
+Their shared conclusion is
 that in-domain accuracy is effectively saturated while cross-generator and
 in-the-wild performance remains the open problem---which is why the
 evaluation protocol of this thesis treats cross-dataset and

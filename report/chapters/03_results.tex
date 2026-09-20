@@ -393,7 +393,10 @@ confidence phrasing.
 
 Table~\ref{tab:fairness} reports per-subgroup AUC on the in-domain test
 split using the demographic annotations shipped with FakeAVCeleb (five
-ethnicity groups, two gender groups). The maximum gap across gender
+ethnicity groups, two gender groups). Because fairness gaps measured
+in-domain need not transfer across datasets~\cite{lin2024fairnessgen}, the
+same audit is the first item on the list for any corpus with demographic
+metadata. The maximum gap across gender
 subgroups is \dummy{0.011} (video) / \dummy{0.014} (audio) and across
 ethnicity groups \dummy{0.024} / \dummy{0.021}; no subgroup falls below
 \dummy{0.94} in-domain AUC on either stream. Residual gaps are documented in

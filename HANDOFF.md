@@ -128,7 +128,9 @@ results/              (created by runs; results JSONs live here)
   generated figures currently come from `--demo` mode — regenerate from real
   results. Red `[TODO: …]` markers remain only for facts nobody can invent
   (external examiner, defense date, editorial acknowledgement, team
-  contribution split). Bibliography now ~62 entries incl. 2024–2025 SOTA
+  contribution split). Bibliography now 79 entries (every 2023–2026 addition verified against its Crossref DOI record on
+  2026-09-20; new refs only from IEEE/ACM/CVF/NeurIPS/ISCA venues; `python scratch verify_ref.py`
+  pattern = query Crossref `works?query.bibliographic=` then confirm authors/venue) incl. 2024–2025 SOTA
   (AVFF, LSDA, LAA-Net, ASVspoof 5, SpoofCeleb, UMMAFormer, DiMoDif,
   Deepfake-Eval-2024, EU AI Act…); before submission add 2–4 citations from
   the target journal's 2026 issues (see `docs/08_journal_shortlist.md`).

@@ -92,7 +92,8 @@ negatives:
 \end{equation}
 with temperature $\tau{=}0.07$. This generalizes
 SyncNet~\cite{chung2016syncnet}-style supervision into the embedding space of
-the detector itself. The module outputs a per-window agreement score
+the detector itself, in the spirit of recent transformer synchronizers that
+recover offsets from sparse audio-visual cues~\cite{iashin2024synchformer}. The module outputs a per-window agreement score
 $s_t = \cos\big(g_v(V_t), g_a(A_t)\big)$---exposed to the user as the
 synchronization curve---and a pooled consistency embedding $z_c$. The
 mechanism is illustrated in Figure~\ref{fig:sync}: temporally aligned
@@ -124,7 +125,9 @@ consistency subspaces:
 single-modality: voice recordings without video, and muted or music-overlaid
 clips without usable speech. An absent stream is replaced by learnable null
 tokens, the consistency embedding $z_c$ is zeroed (no cross-modal evidence
-exists), and the surviving authenticity head decides alone. During training,
+exists), and the surviving authenticity head decides alone---a
+null-token strategy analogous to missing-modality prompting in multimodal
+recognition~\cite{lee2023missingmodality}. During training,
 \emph{modality dropout} removes one stream from a sample with probability
 $p{=}0.15$ (never both), masking the dropped modality's losses per sample.
 This enables audio-only detection (evaluated directly against anti-spoofing
@@ -549,9 +552,11 @@ split definitions, and model weights are released.
 
 \textbf{Sampling bias and fairness.} Benchmark corpora over-represent certain
 demographics and languages, which can bias detection accuracy. The study
-audits performance gaps across gender, apparent skin tone, and language
-subgroups, applies balanced sampling during training, and reports the residual
-gaps transparently rather than concealing them.
+audits performance gaps across gender and ethnicity subgroups, applies
+balanced sampling during training, and reports the residual gaps
+transparently rather than concealing them; fairness gaps are known to widen
+under cross-domain evaluation~\cite{lin2024fairnessgen}, so the audit is
+repeated on the cross-dataset corpora where demographic labels exist.
 
 \textbf{Transparency and research integrity.} All reported numbers correspond
 to committed configuration files with fixed random seeds; negative and partial
