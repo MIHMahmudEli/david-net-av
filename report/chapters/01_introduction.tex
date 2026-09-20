@@ -23,15 +23,13 @@ VALL-E~\cite{wang2023valle} demonstrated zero-shot voice cloning from a
 three-second enrollment sample, and this capability was rapidly
 productionized by factorized-codec and diffusion synthesizers such as
 NaturalSpeech~3~\cite{ju2024naturalspeech3} and by openly released
-multilingual systems including XTTS~\cite{casanova2024xtts} and
-CosyVoice~\cite{du2024cosyvoice}, which together place high-fidelity voice
+multilingual systems such as XTTS~\cite{casanova2024xtts}, which place
+high-fidelity voice
 cloning in more than one hundred languages behind a single API call or a
 consumer-grade GPU. On the visual side, audio-driven portrait animators such
 as EMO~\cite{tian2024emo} and VASA-1~\cite{xu2024vasa} generate lip-synced,
 emotionally expressive talking-head video of a target identity from a single
-photograph---VASA-1 in real time---while large-scale diffusion video models
-exemplified by Sora~\cite{brooks2024sora} indicate that fully synthetic,
-photorealistic scenes no longer require a source recording at all. The
+photograph---VASA-1 in real time. The
 practical consequences are already documented: multimodal impersonation has
 been used in corporate video-conference fraud with losses exceeding
 US\$25~million in a single 2024 incident, in large-scale political
@@ -42,11 +40,12 @@ obligations on synthetic media---but labeling presumes cooperative
 generators; adversarial use requires \emph{detection}.
 
 Measurement studies confirm that detection has not kept pace with
-generation. The Deepfake-Eval-2024 benchmark~\cite{chandra2025deepfakeeval},
-which collected deepfakes actually circulating on social media during 2024,
-reports that the AUC of state-of-the-art open-source detectors drops by
-roughly 45--50\% relative to their academic-benchmark performance when they
-are confronted with contemporary in-the-wild forgeries. This gap between
+generation. The DeepfakeBench evaluation~\cite{yan2023deepfakebench} finds
+that video detectors lose 10--25 AUC points as soon as the test corpus
+changes, audio detectors trained on ASVspoof degrade sharply on speech
+collected in the wild~\cite{muller2022inthewild}, and shortcut analyses show
+that part of the reported in-domain accuracy is not forgery detection at
+all~\cite{smeu2025shortcuts}. This gap between
 laboratory accuracy and field robustness---driven by unseen generators,
 re-compression, and mixed-modality manipulation---is precisely the failure
 mode that motivates the generalization-first design of this thesis.
@@ -92,10 +91,9 @@ domain.
 
 Six research threads are directly relevant to this study. Comprehensive
 surveys of the field are provided by Masood et al.~\cite{masood2023survey}
-for generation and detection at large, Pei et al.~\cite{pei2024survey} for a
-2024 benchmark-oriented view, and Liu et al.~\cite{liu2024multimodalsurvey}
-specifically for the transition from single-modal to multi-modal facial
-deepfake detection that this thesis addresses.
+for generation and detection at large and Pei et al.~\cite{pei2024survey} for a
+benchmark-oriented view that also covers the transition from single-modal to
+multi-modal facial deepfake detection addressed by this thesis.
 
 \textbf{Unimodal video detection.} Early detectors treated the task as
 frame-level image classification: XceptionNet trained on
@@ -169,8 +167,6 @@ consistent. LAV-DF~\cite{cai2022lavdf} and
 AV-Deepfake1M~\cite{cai2023avdeepfake1m} introduced content-driven temporal
 forgery localization; BA-TFD+~\cite{cai2023batfdplus} and
 UMMAFormer~\cite{zhang2023ummaformer} are the strongest published localizers,
-DiMoDif~\cite{koutlis2024dimodif} exploits speech-perception
-discrepancies between the modalities for detection and localization, and
 contextual cross-modal attention~\cite{katamneni2024contextual} jointly scores
 clips and frames; AV-Deepfake1M++~\cite{cai2025avdeepfake1mpp} adds real-world
 perturbations to the localization benchmark.
@@ -192,8 +188,8 @@ state---are manufactured from pristine data.
 
 \textbf{Benchmarks and in-the-wild evaluation.} Standardized evaluation has
 matured through DeepfakeBench~\cite{yan2023deepfakebench}, the 1M-Deepfakes
-detection challenge~\cite{cai2024challenge}, and
-Deepfake-Eval-2024~\cite{chandra2025deepfakeeval}. Smeu et
+detection challenge~\cite{cai2024challenge}, and its perturbed successor
+AV-Deepfake1M++~\cite{cai2025avdeepfake1mpp}. Smeu et
 al.~\cite{smeu2025shortcuts} further show that audio-visual deepfake datasets,
 FakeAVCeleb included, contain shortcuts (for example, leading silence and
 duration statistics of the manipulated audio) that inflate in-domain
@@ -227,7 +223,7 @@ Unimodal video~\cite{rossler2019faceforensics,haliassos2021lipforensics,nguyen20
 Unimodal audio~\cite{jung2022aasist,zhu2024slim}       & --      & --         & partial    & partial \\
 AV binary fusion~\cite{yang2023avoiddf,oorloff2024avff}     & --      & partial    & --         & partial \\
 Sync/anomaly based~\cite{feng2023avanomaly}   & --      & \checkmark & partial    & partial \\
-Localization~\cite{cai2023batfdplus,zhang2023ummaformer,koutlis2024dimodif} & partial & partial   & \checkmark & -- \\
+Localization~\cite{cai2023batfdplus,zhang2023ummaformer,katamneni2024contextual} & partial & partial   & \checkmark & -- \\
 \textbf{Proposed framework} & \checkmark & \checkmark & \checkmark & \checkmark \\
 \bottomrule
 \end{tabular}
