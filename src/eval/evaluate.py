@@ -57,6 +57,7 @@ def evaluate(cfg, checkpoint: str, manifest: str) -> dict:
                     num_workers=cfg.num_workers, collate_fn=collate)
 
     pv, pa, pq, yv, ya, yq, ids, gens = [], [], [], [], [], [], [], []
+    races, genders = [], []
     loc_example = None
     for batch in dl:
         batch = move(batch, device)
@@ -71,6 +72,8 @@ def evaluate(cfg, checkpoint: str, manifest: str) -> dict:
         yq += batch["quadrant"].cpu().tolist()
         ids += batch["clip_id"]
         gens += batch["generator"]
+        races += batch.get("race", [""] * len(batch["clip_id"]))
+        genders += batch.get("gender", [""] * len(batch["clip_id"]))
         # one qualitative localization timeline (first clip with a manipulated stream)
         if loc_example is None:
             for i in range(batch["video"].size(0)):
@@ -99,9 +102,13 @@ def evaluate(cfg, checkpoint: str, manifest: str) -> dict:
         "n": len(yv),
         "per_generator": {"video": per_group(yv, pv, gens), "audio": per_group(ya, pa, gens)},
         "per_quadrant": {"video": per_group(yv, pv, yq), "audio": per_group(ya, pa, yq)},
+        "fairness": {
+            "race": {"video": per_group(yv, pv, races), "audio": per_group(ya, pa, races)},
+            "gender": {"video": per_group(yv, pv, genders), "audio": per_group(ya, pa, genders)},
+        } if any(races) or any(genders) else None,
         "localization_example": loc_example,
         "preds": {
-            "clip_id": ids, "generator": gens,
+            "clip_id": ids, "generator": gens, "race": races, "gender": genders,
             "video": {"y_true": yv, "y_score": pv},
             "audio": {"y_true": ya, "y_score": pa},
             "quadrant": {"y_true": yq, "y_pred": pq},

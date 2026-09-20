@@ -37,6 +37,9 @@ def run(args):
                                  args.n_frames, args.audio_len, root_dir=root_dir, train=True)
     test_ds = AVDeepfakeDataset(args.test_manifest, args.shard_root,
                                 args.n_frames, args.audio_len, root_dir=root_dir, train=False)
+    if getattr(args, "max_test_clips", 0) and len(test_ds) > args.max_test_clips:
+        from src.training.train import _stratified_subsample
+        test_ds.records = _stratified_subsample(test_ds.records, args.max_test_clips)
     train_dl = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True,
                           num_workers=args.num_workers, collate_fn=collate)
     test_dl = DataLoader(test_ds, batch_size=args.batch_size, shuffle=False,
@@ -45,10 +48,14 @@ def run(args):
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr)
     bce = torch.nn.BCEWithLogitsLoss()
 
+    from src.data.datasets import preflight_check
+    preflight_check(train_ds, name=f"baseline-{args.baseline}")
     model.train()
     steps = 0
     for epoch in range(args.epochs):
-        for batch in train_dl:
+        for it, batch in enumerate(train_dl):
+            if args.max_steps_per_epoch and it >= args.max_steps_per_epoch:
+                break
             for k, v in batch.items():
                 if torch.is_tensor(v):
                     batch[k] = v.to(device)
@@ -110,6 +117,8 @@ def main():
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--log-every", type=int, default=20)
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--max-steps-per-epoch", type=int, default=0, help="0 = full epoch")
+    ap.add_argument("--max-test-clips", type=int, default=0, help="stratified subsample of the test set (0 = all)")
     args = ap.parse_args()
     run(args)
 

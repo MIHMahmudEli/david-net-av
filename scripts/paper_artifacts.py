@@ -216,8 +216,90 @@ def efficiency(config_path: Path | None, checkpoint: Path | None) -> dict:
     return info
 
 
+# ------------------------------------------------------------------ extra experiments
+CROSS_FOR_ABLATION = {"celeb-df-v2": "video_auc", "in-the-wild": "audio_auc"}   # dataset -> the stream it can score
+ROW_END = " \\\\"
+
+
+def _mean_auc(r: dict) -> float:
+    vals = [r["video"]["auc"], r["audio"]["auc"]]
+    vals = [v for v in vals if not _nan(v)]
+    return float(np.mean(vals)) if vals else float("nan")
+
+
+def ablation_rows(reports: dict, main_run_ids: list[str], abl_run_ids: list[str], in_domain: str) -> list[dict]:
+    """rows for fig_ablation / Table 5: in-domain AUC (mean of V/A) and cross-dataset AUC
+    (video AUC on Celeb-DF + audio AUC on In-the-Wild, averaged over what exists)."""
+    def _row(name, runs):
+        ind, cross = [], []
+        for run in runs:
+            r = reports.get((run, in_domain))
+            if r:
+                ind.append(_mean_auc(r))
+            for ds, key in CROSS_FOR_ABLATION.items():
+                rr = reports.get((run, ds))
+                if rr:
+                    v = rr["video" if key == "video_auc" else "audio"]["auc"]
+                    if not _nan(v):
+                        cross.append(v)
+        return {"name": name, "n_runs": len(runs),
+                "in_domain_auc": float(np.mean(ind)) if ind else None,
+                "cross_dataset_auc": float(np.mean(cross)) if cross else None}
+    rows = [_row("full (3 seeds)", main_run_ids)]
+    for run in abl_run_ids:
+        name = run.replace("abl_", "").split("_v2")[0].split("_seed")[0]
+        rows.append(_row(name, [run]))
+    return rows
+
+
+def logo_rows(reports: dict, logo_run_ids: list[str]) -> list[dict]:
+    rows = []
+    for run in logo_run_ids:
+        fam = run.replace("logo_", "").split("_v2")[0].split("_seed")[0]
+        r = reports.get((run, f"logo-{fam}"))
+        if not r:
+            continue
+        rows.append({"family": fam, "n": r["n"], "video_auc": r["video"]["auc"], "video_eer": r["video"]["eer"],
+                     "audio_auc": r["audio"]["auc"], "audio_eer": r["audio"]["eer"],
+                     "quadrant_acc": r["quadrant"]["acc"]})
+    return rows
+
+
+def fairness_table(reports: dict, run_ids: list[str], in_domain: str) -> dict:
+    """Table 6: per-race / per-gender AUC + EER (mean over seeds) and the max subgroup gap."""
+    out = {}
+    for attr in ("race", "gender"):
+        acc = defaultdict(lambda: defaultdict(list))
+        for run in run_ids:
+            r = reports.get((run, in_domain))
+            fair = (r or {}).get("fairness") or {}
+            for mod in ("video", "audio"):
+                for g, m in fair.get(attr, {}).get(mod, {}).items():
+                    if g == "":
+                        continue
+                    acc[mod][g].append(m)
+        table = {}
+        for mod, groups in acc.items():
+            table[mod] = {}
+            for g, ms in groups.items():
+                table[mod][g] = {"n": ms[0]["n"]}
+                for k in ("auc", "eer"):
+                    vals = [m[k] for m in ms if not _nan(m[k])]
+                    table[mod][g][k] = float(np.mean(vals)) if vals else float("nan")
+            aucs = [v["auc"] for v in table[mod].values() if not _nan(v["auc"])]
+            table[mod]["_max_auc_gap"] = float(max(aucs) - min(aucs)) if len(aucs) > 1 else float("nan")
+        out[attr] = table
+    return out
+
+
+def collect_baselines(work: Path) -> list[dict]:
+    return [_load(p) for p in sorted(work.glob("baseline_*.json"))]
+
+
 # ------------------------------------------------------------------ tables
-def latex_tables(summary: dict, per_gen: dict, eff: dict, in_domain: str) -> str:
+def latex_tables(summary: dict, per_gen: dict, eff: dict, in_domain: str,
+                 baselines: list[dict] | None = None, ablations: list[dict] | None = None,
+                 logo: list[dict] | None = None, fairness: dict | None = None) -> str:
     L = []
     ds_in = summary["datasets"].get(in_domain)
     L.append("% ===== Table 1: in-domain (FakeAVCeleb test, subject-disjoint), mean +- std over seeds")
@@ -232,6 +314,14 @@ def latex_tables(summary: dict, per_gen: dict, eff: dict, in_domain: str) -> str
         ]) + " \\\\")
         ci = ds_in["auc_ci95_seed0"]
         L.append(f"% 95% bootstrap CI (seed 0): video AUC {ci['video']}, audio AUC {ci['audio']}")
+    for b in baselines or []:
+        mod = b.get("modality"); m = b["metrics"][mod]
+        cells = ["--"] * 8
+        if mod == "video":
+            cells[0], cells[1] = _fmt(m["auc"]), _fmt(m["eer"])
+        else:
+            cells[2], cells[3] = _fmt(m["auc"]), _fmt(m["eer"])
+        L.append(f"{b['method']} (baseline, 1 seed) & " + " & ".join(cells) + ROW_END)
     L.append("")
     L.append("% ===== Table 2: cross-dataset (trained on FakeAVCeleb train split only)")
     L.append("% Dataset & Modality & n & V-AUC & A-AUC & Quad-Acc \\\\")
@@ -254,6 +344,32 @@ def latex_tables(summary: dict, per_gen: dict, eff: dict, in_domain: str) -> str
                  f"{_fmt(a.get('auc', {}).get('mean'), a.get('auc', {}).get('std'))} & "
                  f"{_fmt(a.get('acc', {}).get('mean'), a.get('acc', {}).get('std'))} \\\\")
     L.append("")
+    if ablations:
+        L.append("% ===== Table 5: ablations (seed 42, reduced epochs unless noted; full = 3-seed mean)")
+        L.append("% Variant & In-domain AUC (mean V/A) & Cross-dataset AUC" + ROW_END)
+        for r in ablations:
+            L.append(f"{r['name']} & {_fmt(r['in_domain_auc'])} & {_fmt(r['cross_dataset_auc'])}" + ROW_END)
+        L.append("")
+    if logo:
+        L.append("% ===== Table 3: leave-one-generator-family-out (subject-disjoint test identities)")
+        L.append("% Held-out family & n & V-AUC & V-EER & A-AUC & A-EER & Quad-Acc" + ROW_END)
+        for r in logo:
+            L.append(f"{r['family']} & {r['n']} & {_fmt(r['video_auc'])} & {_fmt(r['video_eer'])} & "
+                     f"{_fmt(r['audio_auc'])} & {_fmt(r['audio_eer'])} & {_fmt(r['quadrant_acc'])}" + ROW_END)
+        L.append("")
+    if fairness:
+        L.append("% ===== Table 6: fairness subgroup gaps on the in-domain test split (mean over seeds)")
+        L.append("% Attribute & Group & n & V-AUC & A-AUC" + ROW_END)
+        for attr, table in fairness.items():
+            groups = sorted(set(table.get("video", {})) | set(table.get("audio", {})))
+            for g in groups:
+                if g.startswith("_"):
+                    continue
+                v = table.get("video", {}).get(g, {}); a = table.get("audio", {}).get(g, {})
+                L.append(f"{attr} & {g} & {v.get('n', a.get('n', ''))} & {_fmt(v.get('auc'))} & {_fmt(a.get('auc'))}" + ROW_END)
+            L.append(f"% {attr}: max AUC gap video={_fmt(table.get('video', {}).get('_max_auc_gap'))} "
+                     f"audio={_fmt(table.get('audio', {}).get('_max_auc_gap'))}")
+        L.append("")
     L.append("% ===== Table 7: efficiency")
     L.append(f"% params total = {eff.get('params_total', '?')}, trainable (Stage 1) = {eff.get('params_trainable_stage1', '?')}, "
              f"checkpoint = {eff.get('checkpoint_gb', '?')} GB, latency = {eff.get('latency_ms_per_clip', '?')} ms/clip on {eff.get('latency_device', '?')}")
@@ -308,7 +424,8 @@ def fig_per_generator(per_gen: dict, out_dir: Path):
     plt.close(fig)
 
 
-def build_figures(reports: dict, run_ids: list[str], in_domain: str, robustness: Path | None, out: Path):
+def build_figures(reports: dict, run_ids: list[str], in_domain: str, robustness: Path | None, out: Path,
+                  baselines: list[dict] | None = None, ablations: list[dict] | None = None):
     """Run src.eval.figures on a staged results dir (in-domain seeds -> ROC/reliability/
     confusion/localization; cross-dataset -> a second ROC)."""
     from src.eval.figures import generate_all, fig_roc
@@ -325,6 +442,10 @@ def build_figures(reports: dict, run_ids: list[str], in_domain: str, robustness:
             (stage / f"david-net_seed{i}.json").write_text(json.dumps(r), encoding="utf-8")
     if robustness and robustness.exists():
         shutil.copy2(robustness, stage / "robustness_david-net.json")
+    for b in baselines or []:                       # baselines share the ROC panel
+        (stage / f"baseline_{b['method']}.json").write_text(json.dumps(b), encoding="utf-8")
+    if ablations:
+        (stage / "ablation.json").write_text(json.dumps(ablations), encoding="utf-8")
     if any(stage.iterdir()):
         generate_all(str(stage), str(fig_dir), demo=False)
     # cross-dataset ROC (first seed), one curve per dataset
@@ -341,7 +462,8 @@ def build_figures(reports: dict, run_ids: list[str], in_domain: str, robustness:
                 shutil.move(str(src), str(fig_dir / f"results_roc_cross_dataset.{ext}"))
         # regenerate the in-domain ROC (fig_roc overwrote it)
         if any(stage.glob("david-net_seed*.json")):
-            fig_roc([_load(p) for p in sorted(stage.glob("david-net_seed*.json"))], fig_dir)
+            fig_roc([_load(p) for p in sorted(stage.glob("david-net_seed*.json"))]
+                    + [_load(p) for p in sorted(stage.glob("baseline_*.json"))], fig_dir)
     shutil.rmtree(stage, ignore_errors=True)
 
 
@@ -364,6 +486,9 @@ def main():
     ap.add_argument("--robustness", default=None, help="robustness JSON (optional)")
     ap.add_argument("--config", default=None, help="a Stage-1 config yaml (for efficiency numbers)")
     ap.add_argument("--checkpoint", default=None, help="best.pt (for checkpoint size)")
+    ap.add_argument("--ablation-run-ids", nargs="*", default=[], help="abl_<name>_v2_seed42 ...")
+    ap.add_argument("--logo-run-ids", nargs="*", default=[], help="logo_<family>_v2_seed42 ...")
+    ap.add_argument("--explain-dir", default=None, help="dir with results_explain_*.{pdf,png}")
     ap.add_argument("--push", action="store_true")
     args = ap.parse_args()
 
@@ -372,7 +497,7 @@ def main():
     (out / "metrics").mkdir(exist_ok=True); (out / "configs").mkdir(exist_ok=True)
     token = os.environ.get("HF_TOKEN") or os.environ.get("hf")
 
-    reports = collect_evals(work, args.run_ids, token)
+    reports = collect_evals(work, args.run_ids + args.ablation_run_ids + args.logo_run_ids, token)
     print(f"{len(reports)} eval reports:", sorted(reports))
     if not reports:
         raise SystemExit("no eval reports found — run the evaluation cell first")
@@ -382,10 +507,29 @@ def main():
     summary = summarize(reports, args.run_ids, args.in_domain)
     per_gen = per_generator_table(reports, args.run_ids, args.in_domain)
     eff = efficiency(Path(args.config) if args.config else None, Path(args.checkpoint) if args.checkpoint else None)
+    baselines = collect_baselines(work)
+    ablations = ablation_rows(reports, args.run_ids, args.ablation_run_ids, args.in_domain) if args.ablation_run_ids else None
+    logo = logo_rows(reports, args.logo_run_ids) if args.logo_run_ids else None
+    fairness = fairness_table(reports, args.run_ids, args.in_domain)
     (out / "metrics" / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     (out / "metrics" / "per_generator.json").write_text(json.dumps(per_gen, indent=2), encoding="utf-8")
     (out / "metrics" / "efficiency.json").write_text(json.dumps(eff, indent=2), encoding="utf-8")
-    (out / "metrics" / "tables.tex").write_text(latex_tables(summary, per_gen, eff, args.in_domain), encoding="utf-8")
+    (out / "metrics" / "fairness.json").write_text(json.dumps(fairness, indent=2), encoding="utf-8")
+    if baselines:
+        (out / "metrics" / "baselines.json").write_text(json.dumps(
+            [{k: v for k, v in b.items() if k != "preds"} for b in baselines], indent=2), encoding="utf-8")
+    if ablations:
+        (out / "metrics" / "ablation.json").write_text(json.dumps(ablations, indent=2), encoding="utf-8")
+    if logo:
+        (out / "metrics" / "logo.json").write_text(json.dumps(logo, indent=2), encoding="utf-8")
+    (out / "metrics" / "tables.tex").write_text(
+        latex_tables(summary, per_gen, eff, args.in_domain, baselines, ablations, logo, fairness), encoding="utf-8")
+    if args.explain_dir and Path(args.explain_dir).exists():
+        (out / "figures").mkdir(parents=True, exist_ok=True)
+        for f in Path(args.explain_dir).glob("results_explain_*"):
+            shutil.copy2(f, out / "figures" / f.name)
+        if (Path(args.explain_dir) / "explain_index.json").exists():
+            shutil.copy2(Path(args.explain_dir) / "explain_index.json", out / "metrics" / "explain_index.json")
     # raw per-(seed, dataset) reports without the prediction dumps + full dumps separately
     (out / "metrics" / "eval").mkdir(exist_ok=True)
     for (run, ds), r in reports.items():
@@ -395,7 +539,8 @@ def main():
     for cfgp in list(work.glob("stage1_*config.yaml")) + list(work.glob("qacp_config.yaml")):
         shutil.copy2(cfgp, out / "configs" / cfgp.name)
 
-    build_figures(reports, args.run_ids, args.in_domain, Path(args.robustness) if args.robustness else None, out)
+    build_figures(reports, args.run_ids, args.in_domain, Path(args.robustness) if args.robustness else None, out,
+                  baselines=baselines, ablations=ablations)
     if logs:
         fig_training_curves(logs, qacp_log, out / "figures")
     fig_per_generator(per_gen, out / "figures")

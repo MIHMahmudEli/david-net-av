@@ -186,6 +186,8 @@ class AVDeepfakeDataset(Dataset):
             "a_avail": torch.tensor(1.0 if has_a else 0.0),
             "generator": rec.get("generator", "unknown"),
             "dataset": rec.get("dataset", "unknown"),
+            "race": (rec.get("meta") or {}).get("race", "") or "",
+            "gender": (rec.get("meta") or {}).get("gender", "") or "",
         }
 
 
@@ -308,6 +310,8 @@ def collate(batch):
     out["clip_id"] = [b["clip_id"] for b in batch]
     out["generator"] = [b["generator"] for b in batch]
     out["dataset"] = [b["dataset"] for b in batch]
+    out["race"] = [b.get("race", "") for b in batch]
+    out["gender"] = [b.get("gender", "") for b in batch]
     return out
 
 

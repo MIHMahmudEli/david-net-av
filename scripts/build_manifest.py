@@ -184,17 +184,45 @@ def subject_disjoint_splits(records: list[dict], seed: int,
     return splits
 
 
-def logo_splits(records: list[dict], test_reals: list[dict]) -> dict[str, dict]:
-    """Leave-one-generator-out: per generator g, hold out ALL g clips for test
-    (paired with test-split real clips so AUC is computable)."""
-    gens = sorted({r["generator"] for r in records} - {"real", "unknown"})
+# Generator FAMILIES for leave-one-generator-out: holding out "wav2lip" must also hold out
+# every hybrid that used wav2lip (faceswap-wav2lip, fsgan-wav2lip), otherwise the audio/lip
+# artifacts of the held-out tool leak into training through the hybrids.
+LOGO_FAMILIES = {
+    "wav2lip":  lambda g: "wav2lip" in g,
+    "fsgan":    lambda g: "fsgan" in g,
+    "faceswap": lambda g: "faceswap" in g,
+    "rtvc":     lambda g: g == "rtvc",
+}
+
+
+def logo_splits(records: list[dict], test_reals: list[dict],
+                splits: dict[str, list[dict]] | None = None) -> dict[str, dict]:
+    """Leave-one-generator-family-out.
+
+    With `splits` (the subject-disjoint train/val/test): train = train-split clips not
+    made with the family, val = val-split clips not made with the family (for model
+    selection without seeing the held-out tool), test = test-split clips made with the
+    family + test-split reals. => generator-disjoint AND subject-disjoint.
+    Without `splits` (legacy): test = every clip of the family + the given reals, train =
+    everything else minus those reals (generator-disjoint only).
+    """
+    gens = {r["generator"] for r in records} - {"real", "unknown"}
+    families = {f: fn for f, fn in LOGO_FAMILIES.items() if any(fn(g) for g in gens)}
+    for g in sorted(gens):                       # generators outside every family
+        if not any(fn(g) for fn in LOGO_FAMILIES.values()):
+            families[g] = (lambda x, g=g: x == g)
     test_real_ids = {r["clip_id"] for r in test_reals}
     out = {}
-    for g in gens:
-        test = [r for r in records if r["generator"] == g] + test_reals
-        train = [r for r in records
-                 if r["generator"] != g and r["clip_id"] not in test_real_ids]
-        out[g] = {"train": train, "test": test}
+    for fam, is_fam in families.items():
+        if splits is not None:
+            train = [r for r in splits["train"] if not is_fam(r["generator"])]
+            val = [r for r in splits["val"] if not is_fam(r["generator"])]
+            test = [r for r in splits["test"] if is_fam(r["generator"])] +                    [r for r in splits["test"] if r["quadrant"] == "RVRA"]
+        else:
+            test = [r for r in records if is_fam(r["generator"])] + test_reals
+            train = [r for r in records if not is_fam(r["generator"]) and r["clip_id"] not in test_real_ids]
+            val = []
+        out[fam] = {"train": train, "val": val, "test": test}
     return out
 
 
@@ -231,10 +259,12 @@ def main():
             print(f"  {name}: {len(recs)} clips, "
                   f"{len({r['identity'] for r in recs})} identities")
         test_reals = [r for r in splits["test"] if r["quadrant"] == "RVRA"]
-        for g, parts in logo_splits(records, test_reals).items():
+        for g, parts in logo_splits(records, test_reals, splits).items():
             _write_jsonl(d / f"logo_{g}_train.jsonl", parts["train"])
+            _write_jsonl(d / f"logo_{g}_val.jsonl", parts["val"])
             _write_jsonl(d / f"logo_{g}_test.jsonl", parts["test"])
-            print(f"  logo[{g}]: train={len(parts['train'])} test={len(parts['test'])}")
+            print(f"  logo[{g}]: train={len(parts['train'])} val={len(parts['val'])} "
+                  f"test={len(parts['test'])} (family, subject-disjoint)")
 
 
 if __name__ == "__main__":
