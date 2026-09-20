@@ -32,10 +32,11 @@ def run(args):
     model = build_baseline(args.baseline).to(device)
     label_key = f"{model.modality}_label"
 
+    root_dir = getattr(args, "root_dir", None)
     train_ds = AVDeepfakeDataset(args.train_manifest, args.shard_root,
-                                 args.n_frames, args.audio_len)
+                                 args.n_frames, args.audio_len, root_dir=root_dir, train=True)
     test_ds = AVDeepfakeDataset(args.test_manifest, args.shard_root,
-                                args.n_frames, args.audio_len)
+                                args.n_frames, args.audio_len, root_dir=root_dir, train=False)
     train_dl = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True,
                           num_workers=args.num_workers, collate_fn=collate)
     test_dl = DataLoader(test_ds, batch_size=args.batch_size, shuffle=False,
@@ -98,6 +99,7 @@ def main():
     ap.add_argument("--train-manifest", required=True)
     ap.add_argument("--test-manifest", required=True)
     ap.add_argument("--shard-root", default=None)
+    ap.add_argument("--root-dir", default=None, help="media root the manifest rel_paths are relative to")
     ap.add_argument("--out", required=True)
     ap.add_argument("--epochs", type=int, default=10)
     ap.add_argument("--batch-size", type=int, default=8)
