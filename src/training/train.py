@@ -174,9 +174,24 @@ def _lr_lambda(warmup_steps: int, total_steps: int, floor: float = 0.01):
     return f
 
 
+def _host_mem(tag: str):
+    """Print host RAM use (Kaggle kills the whole container on RAM OOM, silently)."""
+    try:
+        import psutil
+        vm = psutil.virtual_memory()
+        rss = psutil.Process(os.getpid()).memory_info().rss
+        print(f"[mem:{tag}] process RSS {rss / 1e9:.2f} GB | host used {vm.used / 1e9:.2f} / {vm.total / 1e9:.1f} GB "
+              f"(avail {vm.available / 1e9:.2f} GB)")
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _to_cpu(obj):
     if torch.is_tensor(obj):
-        return obj.detach().to("cpu", copy=True)
+        t = obj.detach()
+        if t.is_floating_point() and t.dtype == torch.float32:
+            t = t.half()          # rollback copy; fp16 is plenty for a safety net
+        return t.to("cpu", copy=True)
     if isinstance(obj, dict):
         return {k: _to_cpu(v) for k, v in obj.items()}
     if isinstance(obj, list):
@@ -190,7 +205,8 @@ def _snapshot(model, opt):
 
 
 def _restore(model, opt, snap):
-    model.load_state_dict(snap["model"])
+    model.load_state_dict({k: (v.float() if torch.is_tensor(v) and v.dtype == torch.float16 else v)
+                           for k, v in snap["model"].items()})
     opt.load_state_dict(snap["optimizer"])   # casts state back to the param devices
 
 
@@ -213,7 +229,8 @@ def train(cfg):
     train_dl = DataLoader(train_ds, batch_size=cfg.batch_size, sampler=sampler,
                           num_workers=cfg.num_workers, collate_fn=collate,
                           pin_memory=(device == "cuda"), drop_last=True,
-                          persistent_workers=False)
+                          persistent_workers=False,
+                          prefetch_factor=(2 if cfg.num_workers > 0 else None))
 
     # Validation set (optional)
     val_manifest = getattr(cfg, "val_manifest", None)
@@ -242,11 +259,14 @@ def train(cfg):
                 "launching Stage 1 (see Cell 10 in train_kaggle.ipynb)."
             )
         else:
-            state = torch.load(cfg.init_from, map_location=device, weights_only=True)
+            state = torch.load(cfg.init_from, map_location="cpu", weights_only=True)
             missing, unexpected = model.load_state_dict(state["model"], strict=False)
             print(f"init_from {cfg.init_from}: {len(missing)} missing, {len(unexpected)} unexpected keys")
             if missing:
                 print(f"  missing (first 10): {missing[:10]}")
+            del state
+            import gc
+            gc.collect()
 
     if getattr(cfg, "gradient_checkpointing", True):
         enable_gradient_checkpointing(model)
@@ -342,7 +362,9 @@ def train(cfg):
     micro_steps = 0
     opt_steps = start_epoch * steps_per_epoch
     nan_restores = 0
-    snapshot = _snapshot(model, opt)   # last known-good weights (CPU copy)
+    _host_mem("before-snapshot")
+    snapshot = _snapshot(model, opt)   # last known-good weights (fp16 CPU copy)
+    _host_mem("after-snapshot")
     model.train()
     t_run = time.time()
 
@@ -405,6 +427,10 @@ def train(cfg):
                     opt.zero_grad(set_to_none=True)
                     accum = 0
 
+                    if opt_steps == 1:
+                        _host_mem("after-first-step")
+                        if device == "cuda":
+                            print(f"[mem] peak VRAM {torch.cuda.max_memory_allocated() / 1e9:.2f} GB")
                     if opt_steps % cfg.log_every == 0 and torch.isfinite(loss):
                         lr_now = opt.param_groups[0]["lr"]
                         print(f"epoch {epoch} step {opt_steps} " +
