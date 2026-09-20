@@ -185,15 +185,16 @@ reduced-budget protocol of four epochs; test identities subject-disjoint).
 Held-out family in the first column; the affected stream is marked in bold.
 Draft placeholders in \textcolor{blue}{blue}.}
 \label{tab:logo}
-\small
+\footnotesize
+\setlength{\tabcolsep}{3pt}
 \begin{tabular}{llrccc}
 \toprule
-\textbf{Held-out family} & \textbf{Members} & \textbf{$n_{\text{test}}$} & \textbf{Video AUC} & \textbf{Audio AUC} & \textbf{Quadrant Acc.} \\
+\textbf{Held-out family} & \textbf{Members (incl.\ hybrids)} & \textbf{$n_{\text{test}}$} & \textbf{V-AUC} & \textbf{A-AUC} & \textbf{Quad.\ Acc.} \\
 \midrule
-Wav2Lip   & wav2lip, faceswap-wav2lip, fsgan-wav2lip & \dummy{2100} & \dummy{\textbf{0.86}} & \dummy{\textbf{0.88}} & \dummy{0.74} \\
-FSGAN     & fsgan, fsgan-wav2lip                     & \dummy{1500} & \dummy{\textbf{0.91}} & \dummy{0.93}          & \dummy{0.79} \\
-Faceswap  & faceswap, faceswap-wav2lip               & \dummy{700}  & \dummy{\textbf{0.92}} & \dummy{0.94}          & \dummy{0.81} \\
-SV2TTS    & rtvc                                     & \dummy{200}  & \dummy{0.95}          & \dummy{\textbf{0.90}} & \dummy{0.83} \\
+Wav2Lip   & wav2lip, faceswap-w2l, fsgan-w2l & \dummy{2100} & \dummy{\textbf{0.86}} & \dummy{\textbf{0.88}} & \dummy{0.74} \\
+FSGAN     & fsgan, fsgan-w2l                 & \dummy{1500} & \dummy{\textbf{0.91}} & \dummy{0.93}          & \dummy{0.79} \\
+Faceswap  & faceswap, faceswap-w2l           & \dummy{700}  & \dummy{\textbf{0.92}} & \dummy{0.94}          & \dummy{0.81} \\
+SV2TTS    & rtvc                             & \dummy{200}  & \dummy{0.95}          & \dummy{\textbf{0.90}} & \dummy{0.83} \\
 \midrule
 Mean (affected stream) & & & \multicolumn{2}{c}{\dummy{0.90}} & \\
 \bottomrule
