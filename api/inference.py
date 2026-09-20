@@ -8,6 +8,7 @@ can start and serve /health even before a model is attached.
 """
 from __future__ import annotations
 
+import os
 import time
 from pathlib import Path
 from typing import Optional
@@ -25,27 +26,45 @@ class DavidNetInference:
         self.torch = torch
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.cfg = load_config(config)
-        self.model = build_model(self.cfg).to(self.device).eval()
-        if checkpoint and Path(checkpoint).exists():
-            state = torch.load(checkpoint, map_location=self.device)
+        # Weights: explicit path, else pull the published checkpoint from the HF Hub
+        # (DAVID_HF_REPO, default = the public model repo). The checkpoint carries its
+        # own config so the served model always matches the trained architecture.
+        ckpt_path = checkpoint if (checkpoint and Path(checkpoint).exists()) else None
+        hf_repo = os.environ.get("DAVID_HF_REPO", "MoshinAli/david-net-av")
+        if ckpt_path is None and hf_repo:
+            try:
+                from huggingface_hub import hf_hub_download
+                ckpt_path = hf_hub_download(hf_repo, "david_net.pt", token=os.environ.get("HF_TOKEN"))
+            except Exception as e:  # noqa: BLE001
+                print(f"[inference] could not fetch weights from {hf_repo}: {e}")
+        self.weights_loaded = False
+        if ckpt_path:
+            state = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+            if "cfg" in state:
+                saved = dict(state["cfg"])
+                for k in ("d_model", "n_heads", "n_fusion_layers", "use_sync", "use_disentangle",
+                          "compose_quadrant", "video_backbone", "audio_backbone",
+                          "video_model_name", "audio_model_name", "n_frames", "audio_len"):
+                    if k in saved:
+                        setattr(self.cfg, k, saved[k])
+                self.cfg.feature_cache = None
+            self.model = build_model(self.cfg).to(self.device).eval()
             self.model.load_state_dict(state["model"])
-        self.version = "david-net-lite-1.0"
+            self.weights_loaded = True
+            self.version = f"david-net-{state.get('epoch', '?')}"
+        else:
+            self.model = build_model(self.cfg).to(self.device).eval()
+            self.version = "david-net-UNTRAINED"
+            print("[inference] WARNING: no weights loaded — predictions are meaningless")
 
     def _preprocess(self, video_path: str):
-        """Decode clip → (frames, waveform, duration) via the real pipeline
-        (ffmpeg + face tracking). Falls back to dummy tensors when ffmpeg is
-        unavailable so the service still boots in dev environments."""
-        torch = self.torch
-        try:
-            from src.data.preprocess import preprocess_clip
-            r = preprocess_clip(video_path, n_frames=self.cfg.n_frames,
-                                audio_len=self.cfg.audio_len)
-            return (r["video"].unsqueeze(0), r["audio"].unsqueeze(0),
-                    r["meta"]["duration_sec"])
-        except Exception:
-            frames = torch.randn(self.cfg.n_frames, 3, 224, 224)
-            audio = torch.randn(self.cfg.audio_len)
-            return frames.unsqueeze(0), audio.unsqueeze(0), 4.0
+        """Decode clip -> (frames, waveform, duration) with the SAME decoder used in
+        training (aligned centre window). Raises on failure: an end user must never
+        receive a verdict computed on fabricated tensors."""
+        from src.data.decode import decode_clip, probe
+        d = decode_clip(video_path, self.cfg.n_frames, self.cfg.audio_len, 224, window="center")
+        dur = float(probe(video_path).get("duration", d.window[1]) or d.window[1])
+        return d.video.unsqueeze(0), d.audio.unsqueeze(0), dur
 
     def predict(self, video_path: str, explain: bool = False,
                 has_video: bool = True, has_audio: bool = True) -> dict:

@@ -85,12 +85,17 @@ def sweep(cfg, checkpoint: str, manifest: str) -> dict:
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = build_model(cfg).to(device)
     if checkpoint:
-        state = torch.load(checkpoint, map_location=device)
+        state = torch.load(checkpoint, map_location=device, weights_only=False)
         model.load_state_dict(state["model"])
     model.eval()
 
     ds = AVDeepfakeDataset(manifest, cfg.shard_root, cfg.n_frames, cfg.audio_len,
                            root_dir=getattr(cfg, "root_dir", None), train=False)
+    max_clips = int(getattr(cfg, "eval_max_clips", 0) or 0)
+    if max_clips and len(ds) > max_clips:
+        from src.training.train import _stratified_subsample
+        ds.records = _stratified_subsample(ds.records, max_clips)
+        print(f"[robustness] subsampled to {len(ds)} clips")
     dl = DataLoader(ds, batch_size=cfg.batch_size, shuffle=False,
                     num_workers=cfg.num_workers, collate_fn=collate)
 
@@ -100,9 +105,10 @@ def sweep(cfg, checkpoint: str, manifest: str) -> dict:
             batch = move(batch, device)
             video = v_fn(batch["video"]) if v_fn else batch["video"]
             audio = a_fn(batch["audio"]) if a_fn else batch["audio"]
-            out = model(video, audio)
-            pv += torch.sigmoid(out["logit_v"]).cpu().tolist()
-            pa += torch.sigmoid(out["logit_a"]).cpu().tolist()
+            with torch.amp.autocast("cuda", enabled=(device == "cuda")):
+                out = model(video, audio)
+            pv += torch.sigmoid(out["logit_v"].float()).cpu().tolist()
+            pa += torch.sigmoid(out["logit_a"].float()).cpu().tolist()
             yv += batch["video_label"].cpu().tolist()
             ya += batch["audio_label"].cpu().tolist()
         return per_modality(yv, pv)["auc"], per_modality(ya, pa)["auc"]
@@ -130,8 +136,14 @@ def main():
     ap.add_argument("--checkpoint", default="")
     ap.add_argument("--manifest", required=True)
     ap.add_argument("--out", default="results/robustness.json")
+    ap.add_argument("--root-dir", default=None)
+    ap.add_argument("--max-clips", type=int, default=0)
     args = ap.parse_args()
     cfg = load_config(args.config)
+    if args.root_dir:
+        cfg.root_dir = args.root_dir
+    if args.max_clips:
+        cfg.eval_max_clips = args.max_clips
     report = sweep(cfg, args.checkpoint, args.manifest)
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     with open(args.out, "w", encoding="utf-8") as f:

@@ -90,6 +90,8 @@ src/
   baselines/          models.py (registry), train_baseline.py
 scripts/              build_manifest.py (FakeAVCeleb→manifest+splits),
                       run_experiments.py (ablation matrix), aggregate_results.py,
+                      paper_artifacts.py (ALL manuscript metrics/tables/figures → HF paper/),
+                      publish_model.py (public HF model repo for end users),
                       download.md (dataset access + the 5-command chain)
 api/                  FastAPI service (app.py, inference.py, Dockerfile)
 ui/                   Next.js plan (README.md — app not scaffolded yet)
@@ -261,6 +263,18 @@ Every unfinished slot is marked `\todo{...}` (red). Search for them:
 | Approval page | External examiner name + defense date + supervisor rank |
 | Author Contributions | adjust drafted division of work with the team |
 | Economic Decision TODOs | GPU-hours from W&B / power draw measured on the Spark |
+
+**Where the numbers come from after a Kaggle run:** notebook Cell 13 runs the robustness
+sweep and `scripts/paper_artifacts.py`, which pushes to HF `MoshinAli/david-net-av-backup/paper/`:
+`metrics/summary.json` (per dataset × seed + mean/std + bootstrap CI), `metrics/tables.tex`
+(Table 1/2/per-generator/efficiency bodies), `metrics/per_generator.json`,
+`metrics/efficiency.json`, `metrics/eval/*` (slim reports + prediction dumps), and
+`figures/results_{roc,roc_cross_dataset,reliability,confusion,localization,robustness,
+training_curves,per_generator}.{pdf,png}`; copy `figures/` into `report/figures/generated/`.
+Cell 14 (`scripts/publish_model.py`) publishes weights + config + model card + `api/` to the
+PUBLIC repo `MoshinAli/david-net-av`; the FastAPI Space pulls `david_net.pt` from there.
+Still missing for the paper and NOT produced by the notebook: LOGO retraining (Table 3),
+ablations (Table 5, `scripts/run_experiments.py`), baselines, Grad-CAM (Fig. C), fairness (Table 6).
 
 **Numbers discipline:** every number in a table traces to a JSON in `results/`
 which traces to a config in `results/cfg_*.yaml`. If a number can't be traced,

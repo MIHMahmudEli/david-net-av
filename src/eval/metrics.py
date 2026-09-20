@@ -49,6 +49,29 @@ def quadrant_metrics(y_true, y_pred, n_classes: int = 4):
     }
 
 
+def per_group(y_true, y_score, groups, thr: float = 0.5, min_n: int = 5):
+    """Per-generator / per-dataset breakdown of the binary metrics.
+
+    Groups with a single class report AUC/EER as NaN but still get acc/n so the
+    manuscript can state detection rate on all-fake generators."""
+    from sklearn.metrics import accuracy_score
+    y_true = np.asarray(y_true); y_score = np.asarray(y_score); groups = np.asarray(groups)
+    out = {}
+    for g in sorted(set(groups.tolist())):
+        m = groups == g
+        if m.sum() < min_n:
+            continue
+        yt, ys = y_true[m], y_score[m]
+        out[str(g)] = {
+            "n": int(m.sum()),
+            "auc": _safe_auc(yt, ys),
+            "eer": eer(yt, ys),
+            "acc": float(accuracy_score(yt, (ys >= thr).astype(int))),
+            "pos_rate": float(yt.mean()),
+        }
+    return out
+
+
 def expected_calibration_error(y_true, y_prob, n_bins: int = 15):
     y_true = np.asarray(y_true)
     y_prob = np.asarray(y_prob)

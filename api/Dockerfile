@@ -10,8 +10,10 @@ RUN pip install --no-cache-dir -r /app/api/requirements.txt
 
 COPY . /app
 ENV PYTHONPATH=/app
-ENV DAVID_CONFIG=/app/configs/david_net.yaml
-# ENV DAVID_CHECKPOINT=/app/weights/david_net_lite.pt
+ENV DAVID_CONFIG=/app/configs/david_net_kaggle.yaml
+# Weights are pulled from the public HF model repo at first request
+# (override with DAVID_CHECKPOINT=/path/to/david_net.pt to use a local file).
+ENV DAVID_HF_REPO=MoshinAli/david-net-av
 
 EXPOSE 7860
 CMD ["uvicorn", "api.app:app", "--host", "0.0.0.0", "--port", "7860"]

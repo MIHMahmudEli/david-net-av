@@ -20,7 +20,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from src.data.datasets import AVDeepfakeDataset, collate, preflight_check
-from src.eval.metrics import per_modality, quadrant_metrics, expected_calibration_error
+from src.eval.metrics import per_modality, quadrant_metrics, expected_calibration_error, per_group
 from src.training.train import build_model, move, availability_masks
 from src.utils.config import load_config
 
@@ -57,6 +57,7 @@ def evaluate(cfg, checkpoint: str, manifest: str) -> dict:
                     num_workers=cfg.num_workers, collate_fn=collate)
 
     pv, pa, pq, yv, ya, yq, ids, gens = [], [], [], [], [], [], [], []
+    loc_example = None
     for batch in dl:
         batch = move(batch, device)
         v_av, a_av = availability_masks(batch, 0.0)
@@ -70,6 +71,19 @@ def evaluate(cfg, checkpoint: str, manifest: str) -> dict:
         yq += batch["quadrant"].cpu().tolist()
         ids += batch["clip_id"]
         gens += batch["generator"]
+        # one qualitative localization timeline (first clip with a manipulated stream)
+        if loc_example is None:
+            for i in range(batch["video"].size(0)):
+                if batch["video_label"][i] > 0 or batch["audio_label"][i] > 0:
+                    dur = float(cfg.audio_len) / 16000.0
+                    loc_example = {
+                        "clip_id": batch["clip_id"][i], "duration_sec": dur,
+                        "video": {"prob": torch.sigmoid(out["loc_v"][i].float()).cpu().tolist(),
+                                  "gt_segments": [[0.0, dur]] if batch["video_label"][i] > 0 else []},
+                        "audio": {"prob": torch.sigmoid(out["loc_a"][i].float()).cpu().tolist(),
+                                  "gt_segments": [[0.0, dur]] if batch["audio_label"][i] > 0 else []},
+                    }
+                    break
 
     report = {
         "method": "david-net",
@@ -83,6 +97,9 @@ def evaluate(cfg, checkpoint: str, manifest: str) -> dict:
             "audio_ece": expected_calibration_error(ya, pa),
         },
         "n": len(yv),
+        "per_generator": {"video": per_group(yv, pv, gens), "audio": per_group(ya, pa, gens)},
+        "per_quadrant": {"video": per_group(yv, pv, yq), "audio": per_group(ya, pa, yq)},
+        "localization_example": loc_example,
         "preds": {
             "clip_id": ids, "generator": gens,
             "video": {"y_true": yv, "y_score": pv},
