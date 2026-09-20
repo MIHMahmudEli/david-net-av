@@ -90,80 +90,124 @@ Proposed w/o QACP  & A+V & \dummy{0.978\,$\pm$\,0.004} & \dummy{0.984\,$\pm$\,0.
   \label{fig:confusion}
 \end{figure}}{}
 
+\IfFileExists{figures/generated/results_training_curves.pdf}{%
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.98\textwidth]{generated/results_training_curves}
+  \caption{Training dynamics. Left: Stage-1 multi-task loss per epoch for the
+  three seeds; centre: validation AUC per stream; right: QACP (Stage-0)
+  factorized SupCon loss and its three terms. Flat terms at $\ln(B-1)$ would
+  indicate collapsed embeddings (draft: demo data).}
+  \label{fig:training}
+\end{figure}}{}
+
 \subsection{Cross-Dataset Generalization (RQ3, RQ6)}
 \label{sec:res-crossdataset}
 
-Table~\ref{tab:crossdataset} presents the make-or-break evidence of this
-thesis: models trained on FakeAVCeleb and AV-Deepfake1M only, evaluated with
-no adaptation on three unseen corpora. Consistent with the published
-literature~\cite{yan2023deepfakebench,chandra2025deepfakeeval}, every method
-degrades under distribution shift; the question is by how much. The proposed
-framework with QACP retains an AUC of \dummy{0.838\,$\pm$\,0.011} on DFDC and
-\dummy{0.851\,$\pm$\,0.009} on KoDF---absolute improvements of
-\dummy{+0.104} and \dummy{+0.103} over the strongest multimodal baseline
-(AVFF) and of \dummy{+0.067} and \dummy{+0.065} over the identical
-architecture trained without QACP. The KoDF result additionally demonstrates
-transfer across language and demographics (Korean speakers, unseen at
-training time). Because the only difference between the last two rows is the
-pretraining stage, the gap isolates the contribution of the generator-free
-quadrant construction and directly supports the RQ6 hypothesis that
-pristine-data pretraining generalizes better than supervised exposure to
-generator outputs alone.
+Table~\ref{tab:crossdataset} applies the FakeAVCeleb-trained model, without
+any adaptation, to six external corpora that differ in generator, codec,
+recording conditions and modality. Three of them are audio-visual
+(Celeb-DF~v2, DFDC, DeepfakeTIMIT) and three are audio-only (In-the-Wild,
+ASVspoof~2019~LA, WaveFake); audio-only inputs pass through the null-video
+token path of Section~\ref{sec:davidnet}, so the audio verdict is
+computed exactly as it would be for a voice note. The per-stream AUC is
+reported wherever the corpus contains both classes for that stream; corpora
+with a single class (all-fake WaveFake, all-fake DeepfakeTIMIT) contribute a
+detection rate instead. Every method degrades under distribution shift; the
+question is by how much. The video head retains an AUC of
+\dummy{0.83\,$\pm$\,0.01} on Celeb-DF~v2 and the audio head
+\dummy{0.86\,$\pm$\,0.01} on In-the-Wild---the two corpora that are furthest
+from FakeAVCeleb in generator and acquisition---while the
+architecture trained without QACP (ablation row of Table~\ref{tab:ablation})
+loses \dummy{0.06} and \dummy{0.05} AUC respectively. Because the only
+difference between the two is the pretraining stage, the gap isolates the
+contribution of the generator-free quadrant construction and supports the
+RQ6 hypothesis that pristine-data pretraining generalizes better than
+supervised exposure to generator outputs alone. Figure~\ref{fig:roc-cross}
+shows the corresponding ROC curves.
 
 \begin{table}[htbp]
 \centering
-\caption{Cross-dataset AUC: train on FakeAVCeleb + AV-Deepfake1M, test on
-unseen corpora without adaptation. Draft placeholders in
-\textcolor{blue}{blue}.}
+\caption{Cross-dataset evaluation: trained on the FakeAVCeleb train split
+only, tested on unseen corpora without adaptation (mean $\pm$ std over three
+seeds; ``--'' = single-class corpus for that stream, for which the detection
+rate is given in the text). Draft placeholders in \textcolor{blue}{blue}.}
 \label{tab:crossdataset}
 \small
-\begin{tabular}{lccc}
+\begin{tabular}{llrccc}
 \toprule
-\textbf{Method} & \textbf{DFDC} & \textbf{KoDF} & \textbf{DF-TIMIT} \\
+\textbf{Corpus} & \textbf{Type} & \textbf{$n$} & \textbf{Video AUC} & \textbf{Audio AUC} & \textbf{Quadrant Acc.} \\
 \midrule
-Best unimodal baseline (LipForensics)   & \dummy{0.703} & \dummy{0.719} & \dummy{0.842} \\
-Best multimodal baseline (AVFF)         & \dummy{0.734} & \dummy{0.748} & \dummy{0.871} \\
-Proposed w/o QACP                       & \dummy{0.771\,$\pm$\,0.013} & \dummy{0.786\,$\pm$\,0.012} & \dummy{0.903\,$\pm$\,0.008} \\
-\textbf{Proposed + QACP}                & \dummy{\textbf{0.838\,$\pm$\,0.011}} & \dummy{\textbf{0.851\,$\pm$\,0.009}} & \dummy{\textbf{0.941\,$\pm$\,0.006}} \\
+Celeb-DF v2~\cite{li2020celebdf}       & A+V   & \dummy{6529}  & \dummy{0.83\,$\pm$\,0.01} & --                          & \dummy{0.71} \\
+DFDC (10 parts)~\cite{dolhansky2020dfdc} & A+V & \dummy{4000}  & \dummy{0.78\,$\pm$\,0.02} & \dummy{0.74\,$\pm$\,0.02} & \dummy{0.62} \\
+DeepfakeTIMIT~\cite{korshunov2018dftimit} & A+V & \dummy{640} & --                          & --                          & \dummy{0.88} \\
+In-the-Wild~\cite{muller2022inthewild}  & A     & \dummy{6000}  & --                          & \dummy{0.86\,$\pm$\,0.01} & -- \\
+ASVspoof 2019 LA~\cite{wang2020asvspoof} & A & \dummy{6000}  & --                          & \dummy{0.81\,$\pm$\,0.02} & -- \\
+WaveFake~\cite{frank2021wavefake}       & A     & \dummy{4000}  & --                          & --                          & -- \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+\IfFileExists{figures/generated/results_roc_cross_dataset.pdf}{%
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.95\textwidth]{generated/results_roc_cross_dataset}
+  \caption{Cross-dataset ROC curves per stream, one curve per external corpus
+  (seed 42) (draft: demo data).}
+  \label{fig:roc-cross}
+\end{figure}}{}
 
 \subsection{Cross-Generator Generalization: Leave-One-Generator-Out (RQ6)}
 \label{sec:res-logo}
 
-The LOGO protocol removes every clip produced by one manipulation method
-from training and tests exclusively on it (Table~\ref{tab:logo}). The
-held-out-generator AUC of the affected modality improves from a mean of
-\dummy{0.849} without QACP to \dummy{0.920} with it. The largest gain occurs
-for Wav2Lip (\dummy{0.791} $\rightarrow$ \dummy{0.887}): lip-sync forgeries
-leave the smallest spatial footprint, so a detector without the
-synchronization and consistency machinery must rely on generator-specific
-texture cues that do not survive the hold-out. This is precisely the failure
-mode QACP is designed to remove, since its self-blended and mismatch
-constructions teach boundary and coherence cues that are property-level
-rather than generator-level.
+The LOGO protocol removes every clip produced with one manipulation
+\emph{family} from training and tests exclusively on it
+(Table~\ref{tab:logo}). Families rather than individual tools are held out
+because FakeAVCeleb contains hybrids: holding out Wav2Lip alone while
+training on FSGAN+Wav2Lip clips would leak the held-out tool's lip-sync
+artifacts. Test clips are further restricted to the subject-disjoint test
+identities, so each LOGO run is simultaneously generator- and
+subject-disjoint. The held-out-family AUC of the affected stream averages
+\dummy{0.90}; the largest drop occurs for the Wav2Lip family
+(\dummy{0.86}): lip-sync forgeries leave the smallest spatial footprint, so a
+detector must rely on synchronization and consistency cues rather than
+generator-specific texture. This is precisely the failure mode QACP is
+designed to remove, since its self-blended and mismatch constructions teach
+boundary and coherence cues that are property-level rather than
+generator-level. Figure~\ref{fig:per-generator} complements the hold-out
+analysis with the per-generator accuracy of the main model on the in-domain
+test split.
 
 \begin{table}[htbp]
 \centering
-\caption{Leave-one-generator-out results on FakeAVCeleb: AUC of the affected
-modality on the held-out generator. Draft placeholders in
-\textcolor{blue}{blue}.}
+\caption{Leave-one-generator-family-out on FakeAVCeleb (single seed,
+reduced-budget protocol of four epochs; test identities subject-disjoint).
+Held-out family in the first column; the affected stream is marked in bold.
+Draft placeholders in \textcolor{blue}{blue}.}
 \label{tab:logo}
 \small
-\begin{tabular}{llcc}
+\begin{tabular}{llrccc}
 \toprule
-\textbf{Held-out generator} & \textbf{Affected modality} & \textbf{w/o QACP} & \textbf{+ QACP} \\
+\textbf{Held-out family} & \textbf{Members} & \textbf{$n_{\text{test}}$} & \textbf{Video AUC} & \textbf{Audio AUC} & \textbf{Quadrant Acc.} \\
 \midrule
-Faceswap  & video & \dummy{0.882\,$\pm$\,0.012} & \dummy{\textbf{0.931\,$\pm$\,0.008}} \\
-FSGAN     & video & \dummy{0.868\,$\pm$\,0.014} & \dummy{\textbf{0.924\,$\pm$\,0.009}} \\
-Wav2Lip   & video & \dummy{0.791\,$\pm$\,0.019} & \dummy{\textbf{0.887\,$\pm$\,0.013}} \\
-SV2TTS    & audio & \dummy{0.854\,$\pm$\,0.011} & \dummy{\textbf{0.936\,$\pm$\,0.007}} \\
+Wav2Lip   & wav2lip, faceswap-wav2lip, fsgan-wav2lip & \dummy{2100} & \dummy{\textbf{0.86}} & \dummy{\textbf{0.88}} & \dummy{0.74} \\
+FSGAN     & fsgan, fsgan-wav2lip                     & \dummy{1500} & \dummy{\textbf{0.91}} & \dummy{0.93}          & \dummy{0.79} \\
+Faceswap  & faceswap, faceswap-wav2lip               & \dummy{700}  & \dummy{\textbf{0.92}} & \dummy{0.94}          & \dummy{0.81} \\
+SV2TTS    & rtvc                                     & \dummy{200}  & \dummy{0.95}          & \dummy{\textbf{0.90}} & \dummy{0.83} \\
 \midrule
-Mean      &       & \dummy{0.849} & \dummy{\textbf{0.920}} \\
+Mean (affected stream) & & & \multicolumn{2}{c}{\dummy{0.90}} & \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+\IfFileExists{figures/generated/results_per_generator.pdf}{%
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.9\textwidth]{generated/results_per_generator}
+  \caption{Per-generator accuracy of the video and audio heads on the
+  in-domain test split (mean $\pm$ std over seeds) (draft: demo data).}
+  \label{fig:per-generator}
+\end{figure}}{}
 
 \subsection{Ablation Study (RQ2, RQ3, RQ6)}
 \label{sec:res-ablation}
@@ -267,6 +311,20 @@ UMMAFormer~\cite{zhang2023ummaformer} & \dummy{0.513} & \dummy{0.287} & \dummy{0
   \label{fig:localization}
 \end{figure}}{}
 
+\IfFileExists{figures/generated/results_explain_FVFA_0.pdf}{%
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.85\textwidth]{generated/results_explain_FVFA_0}
+  \caption{Explainability outputs for one FVFA test clip. Top: SmoothGrad
+  input attribution of the video-authenticity logit overlaid on four frames
+  (bright = evidence for manipulation); middle: log-mel spectrogram with the
+  attribution envelope of the audio logit; bottom: per-stream localization
+  probability and the rescaled audio--visual agreement of the
+  synchronization module. Gradient attribution replaces Grad-CAM because both
+  backbones are transformers without a spatial convolutional feature map.}
+  \label{fig:explain}
+\end{figure}}{}
+
 \subsection{Missing-Modality Operation (RQ1, RQ5)}
 \label{sec:res-missing}
 
@@ -350,27 +408,35 @@ confidence phrasing.
 \subsection{Fairness Audit (RQ5)}
 \label{sec:res-fairness}
 
-Table~\ref{tab:fairness} reports subgroup AUC gaps. With
-generator-balanced sampling alone, the maximum gap across gender subgroups
-is \dummy{0.011} and across apparent skin-tone groups \dummy{0.024}
-(reduced from \dummy{0.041} without balanced sampling); the
-language-shift gap, measured as the KoDF-versus-FakeAVCeleb AUC difference,
-is \dummy{0.031}. Residual gaps are documented in the model card rather
-than concealed; no subgroup falls below \dummy{0.94} in-domain AUC.
+Table~\ref{tab:fairness} reports per-subgroup AUC on the in-domain test
+split using the demographic annotations shipped with FakeAVCeleb (five
+ethnicity groups, two gender groups). The maximum gap across gender
+subgroups is \dummy{0.011} (video) / \dummy{0.014} (audio) and across
+ethnicity groups \dummy{0.024} / \dummy{0.021}; no subgroup falls below
+\dummy{0.94} in-domain AUC on either stream. Residual gaps are documented in
+the model card rather than concealed.
 
 \begin{table}[htbp]
 \centering
-\caption{Fairness audit: subgroup AUC gaps on the in-domain test split
-(video stream). Draft placeholders in \textcolor{blue}{blue}.}
+\caption{Fairness audit: subgroup AUC on the in-domain test split (mean over
+three seeds) and the maximum gap per attribute. Draft placeholders in
+\textcolor{blue}{blue}.}
 \label{tab:fairness}
 \small
-\begin{tabular}{lccc}
+\begin{tabular}{llrcc}
 \toprule
-\textbf{Attribute} & \textbf{Max.\ subgroup gap (AUC)} & \textbf{w/o balanced sampling} & \textbf{Min.\ subgroup AUC} \\
+\textbf{Attribute} & \textbf{Group} & \textbf{$n$} & \textbf{Video AUC} & \textbf{Audio AUC} \\
 \midrule
-Gender              & \dummy{0.011} & \dummy{0.018} & \dummy{0.978} \\
-Apparent skin tone  & \dummy{0.024} & \dummy{0.041} & \dummy{0.958} \\
-Language (KoDF vs.\ FAVC) & \dummy{0.031} & \dummy{0.049} & \dummy{0.940} \\
+Gender    & men                   & \dummy{2300} & \dummy{0.975} & \dummy{0.981} \\
+Gender    & women                 & \dummy{2075} & \dummy{0.986} & \dummy{0.967} \\
+\midrule
+Ethnicity & African              & \dummy{900}  & \dummy{0.962} & \dummy{0.970} \\
+Ethnicity & Asian (East)         & \dummy{880}  & \dummy{0.981} & \dummy{0.975} \\
+Ethnicity & Asian (South)        & \dummy{870}  & \dummy{0.979} & \dummy{0.978} \\
+Ethnicity & Caucasian (American) & \dummy{860}  & \dummy{0.986} & \dummy{0.991} \\
+Ethnicity & Caucasian (European) & \dummy{865}  & \dummy{0.984} & \dummy{0.988} \\
+\midrule
+\multicolumn{3}{l}{Max.\ gap: gender / ethnicity} & \dummy{0.011} / \dummy{0.024} & \dummy{0.014} / \dummy{0.021} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -407,10 +473,12 @@ Throughput (CPU, HF free tier) & \dummy{0.4 clips/s} & \dummy{1.8 clips/s} \\
 \end{tabular}
 \end{table}
 
-% Figures are auto-generated by:
-%   python -m src.eval.figures --results results/ --out report/figures/generated
-% (currently --demo mode) and are placed inside the subsection that
-% discusses each of them.
+% Figures and table bodies are auto-generated by the Kaggle notebook (Cell 18,
+% scripts/paper_artifacts.py) into HF paper/: copy paper/figures/* into
+% report/figures/generated/ and paste the blocks of paper/metrics/tables.tex
+% into: tab:indomain (Table 1 block), tab:crossdataset (Table 2), tab:logo
+% (Table 3), tab:ablation (Table 5), tab:fairness (Table 6), tab:efficiency
+% (Table 7 comment line). The generated figures currently come from --demo mode.
 
 \section{Accuracy and Verification}
 \label{sec:verification}
