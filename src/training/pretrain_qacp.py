@@ -117,6 +117,7 @@ def pretrain(cfg):
     # ─── HF Backup setup ──────────────────────────────────────────────
     run_id = getattr(cfg, "run_id", None)
     backup = None
+    wd = None
     start_epoch = 0
     _resume = None
 
@@ -128,6 +129,8 @@ def pretrain(cfg):
         if backup.is_complete(cfg.epochs):
             print(f"[qacp] Run {run_id} already complete on HF ({cfg.epochs} epochs) — nothing to do.")
             return model
+        from src.utils.watchdog import Watchdog
+        wd = Watchdog(run_id, local_dir=getattr(cfg, "local_dir", "/kaggle/working"), tag="qacp").start()
         _resume = backup.load_resume_state()
         if _resume is not None:
             start_epoch = _resume.get("epoch", -1) + 1
@@ -179,6 +182,8 @@ def pretrain(cfg):
             for it, batch in enumerate(dl):
                 if max_micro and it >= max_micro:
                     break
+                if wd:
+                    wd.update(epoch=epoch, micro=it, opt=opt_steps)
                 batch = move(batch, device)
                 with torch.amp.autocast("cuda", enabled=(device == "cuda")):
                     out = model(batch["video"], batch["audio"])
@@ -233,6 +238,8 @@ def pretrain(cfg):
             else:
                 no_improve += 1
 
+            if wd:
+                wd.note("epoch_end", push=True, epoch=epoch, avg_loss=avg_loss, **avg_parts)
             print(f"[qacp] epoch {epoch} ({(time.time() - t_epoch) / 60:.1f} min) avg_loss={avg_loss:.4f} "
                   + " ".join(f"{k}={v:.4f}" for k, v in avg_parts.items() if k != "total")
                   + f" best={best_loss:.4f}{' (NEW BEST)' if is_best else ''} no_improve={no_improve}/{patience}")
@@ -289,7 +296,10 @@ def pretrain(cfg):
             backup.emergency_push(model, epoch)
         raise
     except Exception:
-        logger.error(f"QACP crashed: {traceback.format_exc()}")
+        tb = traceback.format_exc()
+        logger.error(f"QACP crashed: {tb}")
+        if wd:
+            wd.note("exception", push=True, error=tb[-2000:])
         if backup:
             backup.emergency_push(model, epoch if 'epoch' in dir() else 0)
         raise

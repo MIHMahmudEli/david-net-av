@@ -341,6 +341,7 @@ def train(cfg):
 
     # ─── HF Backup ────────────────────────────────────────────────────
     backup = None
+    wd = None                              # HF-backed telemetry (src/utils/watchdog.py)
     start_epoch = 0
     best_auc = 0.0
     skip_samples = 0                       # mid-epoch resume offset (samples)
@@ -354,6 +355,8 @@ def train(cfg):
         if backup.is_complete(cfg.epochs):
             print(f"Run {run_id} already complete on HF ({cfg.epochs} epochs) — nothing to do.")
             return model
+        from src.utils.watchdog import Watchdog
+        wd = Watchdog(run_id, local_dir=getattr(cfg, "local_dir", "/kaggle/working"), tag="train").start()
         resume = backup.load_resume_state()
         if resume is not None:
             start_epoch = resume.get("epoch", -1) + 1
@@ -409,6 +412,8 @@ def train(cfg):
                 if max_micro and it >= max_micro:
                     break
                 seen += batch["video"].size(0)
+                if wd:
+                    wd.update(epoch=epoch, micro=it, opt=opt_steps, clips=batch["clip_id"])
                 if it % 10 == 0:   # heartbeat: last batch seen before any silent death
                     try:
                         with open(os.path.join(cfg.out_dir, f"heartbeat_{run_id or 'run'}.txt"), "w") as hb:
@@ -434,6 +439,8 @@ def train(cfg):
                 if not torch.isfinite(loss):
                     nan_streak += 1
                     nan_total += 1
+                    if wd:
+                        wd.note("nan_loss", clips=batch["clip_id"])
                     print(f"epoch {epoch} micro-step {micro_steps} non-finite loss — skipping")
                     opt.zero_grad(set_to_none=True)
                     accum = 0
@@ -511,6 +518,8 @@ def train(cfg):
             dt = time.time() - t_epoch
             print(f"epoch {epoch} done in {dt / 60:.1f} min — loss={avg_loss:.4f} "
                   f"micro-steps={epoch_steps} skipped={nan_total}")
+            if wd:
+                wd.note("epoch_end", push=True, epoch=epoch, avg_loss=avg_loss, minutes=round(dt / 60, 1))
             if epoch_steps == 0:
                 raise RuntimeError(f"epoch {epoch}: no finite training step at all — aborting")
 
@@ -547,15 +556,22 @@ def train(cfg):
                          "minutes": (time.time() - t_run) / 60}
         if backup:
             backup.push_final(final_metrics)
+        if wd:
+            wd.stop("complete")
         print(f"Training complete. Best mean AUC: {best_auc:.4f}")
 
     except KeyboardInterrupt:
         print("\nInterrupted — pushing emergency checkpoint...")
+        if wd:
+            wd.note("keyboard_interrupt", push=True)
         if backup:
             backup.emergency_push(model, epoch)
         raise
     except Exception:
-        logger.error(f"Training crashed: {traceback.format_exc()}")
+        tb = traceback.format_exc()
+        logger.error(f"Training crashed: {tb}")
+        if wd:
+            wd.note("exception", push=True, error=tb[-2000:])
         if backup:
             backup.emergency_push(model, epoch if 'epoch' in dir() else 0)
         raise
