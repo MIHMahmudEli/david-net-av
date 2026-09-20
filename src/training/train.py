@@ -334,6 +334,9 @@ def train(cfg):
         backup = HFBackup(run_id=run_id, local_dir=getattr(cfg, "local_dir", "/kaggle/working"))
         backup.setup()
 
+        if backup.is_complete(cfg.epochs):
+            print(f"Run {run_id} already complete on HF ({cfg.epochs} epochs) — nothing to do.")
+            return model
         resume = backup.load_resume_state()
         if resume is not None:
             start_epoch = resume.get("epoch", -1) + 1

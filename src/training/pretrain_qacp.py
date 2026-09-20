@@ -110,6 +110,9 @@ def pretrain(cfg):
         backup = HFBackup(run_id=run_id, local_dir=getattr(cfg, "local_dir", "/kaggle/working"))
         backup.setup()
 
+        if backup.is_complete(cfg.epochs):
+            print(f"[qacp] Run {run_id} already complete on HF ({cfg.epochs} epochs) — nothing to do.")
+            return model
         _resume = backup.load_resume_state()
         if _resume is not None:
             start_epoch = _resume.get("epoch", -1) + 1

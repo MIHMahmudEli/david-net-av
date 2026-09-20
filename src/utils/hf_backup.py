@@ -122,6 +122,34 @@ class HFBackup:
 
     # ─── Resume logic ────────────────────────────────────────────────────
 
+    def peek_resume_epoch(self) -> Optional[int]:
+        """Read only state/resume_state.json (a few hundred bytes) and return the last
+        completed epoch, or None. Lets a finished run be recognised WITHOUT downloading
+        its 2 GB checkpoint — every 'Run All' session hits this for every completed run."""
+        try:
+            api = self._get_api()
+            local = api.hf_hub_download(self.repo_id, f"{self.base_path}/state/resume_state.json",
+                                        repo_type=self.repo_type)
+            with open(local) as f:
+                return int(json.load(f).get("epoch", -1))
+        except Exception:
+            return None
+
+    def is_complete(self, epochs: int) -> bool:
+        ep = self.peek_resume_epoch()
+        return ep is not None and ep + 1 >= epochs
+
+    def has_file(self, repo_path: str) -> bool:
+        try:
+            api = self._get_api()
+            return api.file_exists(self.repo_id, repo_path, repo_type=self.repo_type)
+        except Exception:
+            return False
+
+    def download_file(self, repo_path: str, local_dir: Optional[str] = None) -> Optional[str]:
+        return self.download_checkpoint(repo_path, local_dir)
+
+
     def load_resume_state(self) -> Optional[dict]:
         """Check HF repo for existing resume_state.json for this run_id.
 
