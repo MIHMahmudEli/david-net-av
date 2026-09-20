@@ -19,9 +19,9 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-from src.data.datasets import AVDeepfakeDataset, collate
+from src.data.datasets import AVDeepfakeDataset, collate, preflight_check
 from src.eval.metrics import per_modality, quadrant_metrics, expected_calibration_error
-from src.training.train import build_model, move
+from src.training.train import build_model, move, availability_masks
 from src.utils.config import load_config
 
 
@@ -30,22 +30,40 @@ def evaluate(cfg, checkpoint: str, manifest: str) -> dict:
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = build_model(cfg).to(device)
     if checkpoint:
-        state = torch.load(checkpoint, map_location=device)
+        state = torch.load(checkpoint, map_location=device, weights_only=False)
         model.load_state_dict(state["model"])
     model.eval()
 
     root_dir = getattr(cfg, "root_dir", None)
     ds = AVDeepfakeDataset(manifest, cfg.shard_root, cfg.n_frames, cfg.audio_len,
-                           root_dir=root_dir)
+                           root_dir=root_dir, train=False)
+    preflight_check(ds, name="eval")
+    max_clips = int(getattr(cfg, "eval_max_clips", 0) or 0)
+    if max_clips and len(ds) > max_clips:
+        # stratified subsample (per quadrant) so huge audio corpora (WaveFake: 134k
+        # clips) evaluate in minutes instead of days; deterministic for the paper
+        import random as _r
+        by_q = {}
+        for i, r in enumerate(ds.records):
+            by_q.setdefault(r["quadrant"], []).append(i)
+        rng = _r.Random(0)
+        keep = []
+        for q, idx in by_q.items():
+            rng.shuffle(idx)
+            keep += idx[: max(1, int(max_clips * len(idx) / len(ds)))]
+        ds.records = [ds.records[i] for i in sorted(keep)]
+        print(f"[eval] subsampled to {len(ds)} clips (eval_max_clips={max_clips})")
     dl = DataLoader(ds, batch_size=cfg.batch_size, shuffle=False,
                     num_workers=cfg.num_workers, collate_fn=collate)
 
     pv, pa, pq, yv, ya, yq, ids, gens = [], [], [], [], [], [], [], []
     for batch in dl:
         batch = move(batch, device)
-        out = model(batch["video"], batch["audio"])
-        pv += torch.sigmoid(out["logit_v"]).cpu().tolist()
-        pa += torch.sigmoid(out["logit_a"]).cpu().tolist()
+        v_av, a_av = availability_masks(batch, 0.0)
+        with torch.amp.autocast("cuda", enabled=(device == "cuda")):
+            out = model(batch["video"], batch["audio"], v_avail=v_av, a_avail=a_av)
+        pv += torch.sigmoid(out["logit_v"].float()).cpu().tolist()
+        pa += torch.sigmoid(out["logit_a"].float()).cpu().tolist()
         pq += out["logit_quad"].argmax(-1).cpu().tolist()
         yv += batch["video_label"].cpu().tolist()
         ya += batch["audio_label"].cpu().tolist()
@@ -128,6 +146,10 @@ def main():
     ap.add_argument("--ds-name", default=None, help="Dataset name for HF eval path")
     ap.add_argument("--skip-if-done", action="store_true",
                     help="Skip if eval already uploaded to HF")
+    ap.add_argument("--root-dir", default=None,
+                    help="media root for this manifest (overrides cfg.root_dir)")
+    ap.add_argument("--max-clips", type=int, default=0,
+                    help="stratified subsample for very large corpora (0 = all)")
     args = ap.parse_args()
 
     # Check if already done
@@ -138,6 +160,10 @@ def main():
             return
 
     cfg = load_config(args.config)
+    if args.root_dir:
+        cfg.root_dir = args.root_dir
+    if args.max_clips:
+        cfg.eval_max_clips = args.max_clips
     report = evaluate(cfg, args.checkpoint, args.manifest)
 
     # Save locally

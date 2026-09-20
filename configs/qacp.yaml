@@ -6,6 +6,9 @@
 # On T4 (15.6GB VRAM), use batch_size=4 with grad_accum_steps=16 → effective 64.
 # Also unfreeze top encoder layers so features can adapt to synthetic transforms.
 #
+# root_dir: <dir the manifest rel_paths are relative to>  (REQUIRED for real runs;
+#           without it the loader is in DUMMY mode and refuses to train)
+#
 # COLLAPSE FIX (2026-09): freeze_blocks must be < total encoder blocks.
 #   VideoMAE-base: 12 blocks  → set freeze_blocks: 8  (leaves top 4 trainable)
 #   WavLM-base+:   12 blocks  → same freeze_blocks value applies
@@ -31,13 +34,16 @@ shard_root: null
 train_manifest: src/data/splits/train.jsonl   # filtered to RVRA inside the script
 
 batch_size: 4                  # fit in T4 VRAM; use grad_accum for effective batch
-grad_accum_steps: 16           # 4 × 16 = effective batch 64 (SupCon needs ≥64)
+grad_accum_steps: 8            # 4 × 8 = effective batch 32
+qacp_views_per_clip: 4         # each pristine clip appears 4x per epoch under different pseudo-classes
 num_workers: 2
-epochs: 20
+epochs: 15
 lr: 1.0e-4
 lr_encoder: 1.0e-5            # lower LR for the (partially) unfrozen encoder layers
 weight_decay: 1.0e-4
-warmup_epochs: 2
+max_grad_norm: 1.0
+warmup_epochs: 1
+gradient_checkpointing: true
 log_every: 10
 out_dir: runs/qacp
 
@@ -47,8 +53,9 @@ out_dir: runs/qacp
 #   best.pt           : uploaded whenever avg_loss improves
 milestone_every: 5     # permanent checkpoint every 5 epochs  (epochs 0,5,10,15,20,25,30)
 keep_milestones: 3     # prune HF after this many milestones (keeps last 3 = ~15 epochs of history)
-qacp_temperature: 0.5          # higher τ for small effective batches (smoother softmax)
-                               # DO NOT use 0.1 with effective batch < 128: causes collapse
+qacp_temperature: 0.2          # batches are class-balanced by QACPBalancedSampler, so the
+                               # standard 0.1-0.2 range is safe; 0.5 was a workaround for a
+                               # run that (unknowingly) trained on random tensors
 
 # Early stopping: halt if avg_loss plateaus (saves compute + HF upload bandwidth)
 patience: 8                    # stop after this many consecutive epochs with no improvement

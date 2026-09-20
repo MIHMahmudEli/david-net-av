@@ -35,6 +35,11 @@ class VideoMAEEncoder(nn.Module):
         hidden = self.backbone.config.hidden_size
         self.project = ProjectTo(hidden, d_model)
         self._freeze(freeze_blocks)
+        # VideoMAE was pretrained on ImageNet-normalized frames; the decoder hands us
+        # [0,1] RGB, so normalize here (kept inside the module so the API/eval paths
+        # cannot forget it). Values come from MCG-NJU/videomae-base preprocessor_config.
+        self.register_buffer("img_mean", torch.tensor([0.485, 0.456, 0.406]).view(1, 1, 3, 1, 1))
+        self.register_buffer("img_std", torch.tensor([0.229, 0.224, 0.225]).view(1, 1, 3, 1, 1))
 
     def _freeze(self, n: int):
         for p in self.backbone.embeddings.parameters():
@@ -45,7 +50,10 @@ class VideoMAEEncoder(nn.Module):
                 p.requires_grad = False
 
     def forward(self, frames):
-        # frames: (B, T, C, H, W) → VideoMAE expects pixel_values (B, T, C, H, W)
+        # frames: (B, T, C, H, W) in [0,1] → VideoMAE expects normalized pixel_values (B, T, C, H, W)
+        if frames.max() > 1.5:          # tolerate 0-255 inputs from external callers
+            frames = frames / 255.0
+        frames = (frames - self.img_mean) / self.img_std
         out = self.backbone(pixel_values=frames).last_hidden_state  # (B, L, hidden)
         return self.project(out)
 

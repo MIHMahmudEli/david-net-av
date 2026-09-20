@@ -60,17 +60,32 @@ def build_dfdc(root: str) -> list[dict]:
     """DFDC: <clip>.mp4 + <clip>.json in nested dfdc_train_part_XX dirs."""
     root = Path(root)
     records = []
+    # DFDC ships one metadata.json per part: {"<clip>.mp4": {"label": "REAL"|"FAKE", ...}}
+    meta_by_dir: dict[Path, dict] = {}
+    for mj in _find_files(root, "metadata.json"):
+        try:
+            with open(mj) as f:
+                meta_by_dir[mj.parent] = json.load(f)
+        except Exception:
+            continue
+    n_labeled = 0
     for mp4 in _find_files(root, ".mp4"):
         clip_id = mp4.stem
-        json_path = mp4.with_suffix(".json")
-        label = 1
-        if json_path.exists():
-            try:
-                with open(json_path) as f:
-                    meta = json.load(f)
-                label = meta.get("label", 1)
-            except Exception:
-                pass
+        label = None
+        meta = meta_by_dir.get(mp4.parent, {}).get(mp4.name)
+        if meta is not None:
+            label = 0 if str(meta.get("label", "")).upper() == "REAL" else 1
+            n_labeled += 1
+        else:
+            json_path = mp4.with_suffix(".json")
+            if json_path.exists():
+                try:
+                    with open(json_path) as f:
+                        label = int(json.load(f).get("label", 1))
+                except Exception:
+                    label = None
+        if label is None:
+            label = 1
         v_label, a_label = (0, 0) if label == 0 else (1, 1)
         quadrant = "RVRA" if label == 0 else "FVFA"
         rel = mp4.relative_to(root).as_posix()
@@ -85,6 +100,7 @@ def build_dfdc(root: str) -> list[dict]:
             "dataset": "dfdc-10",
             "identity": clip_id, "meta": {},
         })
+    print(f"  dfdc: {n_labeled}/{len(records)} clips labeled via metadata.json")
     return records
 
 
@@ -172,10 +188,10 @@ def build_asvpoof2019(root: str) -> list[dict]:
         try:
             with open(txt) as f:
                 for line in f:
+                    # "LA_0069 LA_D_1047731 - - bonafide"  /  "... - A07 spoof"
                     parts = line.strip().split()
-                    if len(parts) >= 4:
-                        _, utterance, _, label = parts[0], parts[1], parts[2], parts[3]
-                        proto_labels[utterance] = label
+                    if len(parts) >= 4 and parts[-1] in ("bonafide", "spoof"):
+                        proto_labels[parts[1]] = parts[-1]
         except Exception:
             continue
 

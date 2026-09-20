@@ -23,6 +23,7 @@ def focal_bce(logits, targets, gamma: float = 2.0, pos_weight=None, mask=None):
     mask: optional (B,) float — samples with mask=0 (e.g. modality dropped)
     contribute no loss for this head.
     """
+    logits = logits.float()
     p = torch.sigmoid(logits)
     ce = F.binary_cross_entropy_with_logits(logits, targets.float(), pos_weight=pos_weight, reduction="none")
     p_t = p * targets + (1 - p) * (1 - targets)
@@ -41,7 +42,8 @@ def disentangle_loss(z_v, z_a, z_c, mi_weight: float = 0.1):
     authenticity and consistency embeddings.
     """
     if z_c.numel() == 0:
-        return z_v.new_zeros(())
+        return z_v.new_zeros((), dtype=torch.float32)
+    z_v, z_a, z_c = z_v.float(), z_a.float(), z_c.float()
     # project z_c to z_v/z_a width by truncation/mean for a cheap cosine proxy
     d = z_v.size(-1)
     zc = z_c[..., :d] if z_c.size(-1) >= d else F.pad(z_c, (0, d - z_c.size(-1)))
@@ -73,7 +75,8 @@ def localization_loss(loc_logits, seg_targets, mask=None):
     mask: optional (B,) float — rows with mask=0 (modality absent) are excluded.
     """
     if seg_targets is None:
-        return loc_logits.new_zeros(())
+        return loc_logits.new_zeros((), dtype=torch.float32)
+    loc_logits = loc_logits.float()
     L = loc_logits.size(1)
     if seg_targets.size(1) != L:
         seg_targets = F.interpolate(seg_targets.unsqueeze(1).float(), size=L, mode="nearest").squeeze(1)
@@ -97,7 +100,7 @@ def supcon_loss(features, labels, temperature: float = 0.1):
     via the log-softmax diagonal. This ensures a meaningful gradient is always returned
     instead of the silent zero-gradient trap of `features.sum() * 0.0`.
     """
-    f = F.normalize(features, dim=-1)
+    f = F.normalize(features.float(), dim=-1)
     sim = f @ f.t() / temperature                          # (B, B)
     B = f.size(0)
     eye = torch.eye(B, dtype=torch.bool, device=f.device)
@@ -138,7 +141,7 @@ def qacp_loss(out: dict, batch: dict, temperature: float = 0.1):
     l_v = supcon_loss(out["z_v_pre"], batch["video_label"], temperature)
     l_a = supcon_loss(out["z_a_pre"], batch["audio_label"], temperature)
     l_c = supcon_loss(out["z_c"], batch["sync_label"], temperature) \
-        if out["z_c"].numel() else out["z_v"].new_zeros(())
+        if out["z_c"].numel() else out["z_v"].new_zeros((), dtype=torch.float32)
     total = l_v + l_a + l_c
     return total, {"qacp_v": float(l_v.detach()), "qacp_a": float(l_a.detach()),
                    "qacp_c": float(l_c.detach()), "total": float(total.detach())}
@@ -156,13 +159,13 @@ def total_loss(out: dict, batch: dict, w: LossWeights, model=None):
     l_v = focal_bce(out["logit_v"], v_t, mask=v_av)
     l_a = focal_bce(out["logit_a"], a_t, mask=a_av)
     # quadrant is only defined when both streams exist
-    l_quad = (F.cross_entropy(out["logit_quad"], batch["quadrant"].long(), reduction="none")
+    l_quad = (F.cross_entropy(out["logit_quad"].float(), batch["quadrant"].long(), reduction="none")
               * both).sum() / both.sum().clamp(min=1.0)
     l_loc = localization_loss(out["loc_v"], batch.get("video_seg_mask"), mask=v_av) \
         + localization_loss(out["loc_a"], batch.get("audio_seg_mask"), mask=a_av)
     l_dis = disentangle_loss(out["z_v"], out["z_a"], out["z_c"])
 
-    l_sync = out["logit_v"].new_zeros(())
+    l_sync = out["logit_v"].new_zeros((), dtype=torch.float32)
     if model is not None and getattr(model, "sync", None) is not None and out["sync_pack"] is not None:
         vv, aa = out["sync_pack"]
         # only enforce sync on genuinely-synced (real-real) samples with both streams

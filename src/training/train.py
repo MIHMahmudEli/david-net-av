@@ -7,12 +7,21 @@ Usage:
     python -m src.training.train --config configs/david_net.yaml
     python -m src.training.train --config configs/david_net.yaml --dry-run
     python -m src.training.train --config configs/david_net.yaml --run-id run_001
+
+Safety rails added after the first Kaggle run (which trained 50 epochs on random
+tensors and then NaN-looped for 29 epochs without stopping):
+  * data preflight — media must exist and decode before a single GPU step
+  * gradient accumulation actually implemented (`grad_accum_steps`)
+  * non-finite loss/grad steps are skipped; after `nan_patience` consecutive skips the
+    last good snapshot is restored and the LR halved; after `max_nan_restores` the run
+    raises instead of silently finishing with AUC=0.5
 """
 from __future__ import annotations
 
 import argparse
-import json
+import copy
 import logging
+import math
 import os
 import time
 import traceback
@@ -21,7 +30,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
-from src.data.datasets import AVDeepfakeDataset, BalancedGeneratorSampler, collate
+from src.data.datasets import AVDeepfakeDataset, BalancedBatchSampler, collate, preflight_check
 from src.data.augment import VideoAugmentor, AudioAugmentor, augment_batch
 from src.models.david_net import DavidNet, DavidNetConfig
 from src.models.video_encoder import build_video_encoder
@@ -50,7 +59,7 @@ def build_model(cfg) -> DavidNet:
 def move(batch, device):
     for k, v in batch.items():
         if torch.is_tensor(v):
-            batch[k] = v.to(device)
+            batch[k] = v.to(device, non_blocking=True)
     return batch
 
 
@@ -64,6 +73,38 @@ def sample_modality_masks(batch_size: int, p: float, device):
     return v_avail, a_avail
 
 
+def availability_masks(batch, p_dropout: float = 0.0):
+    """Combine genuine stream availability (audio-only files, silent clips) with
+    modality dropout. A sample never loses both streams."""
+    v_av = batch.get("v_avail")
+    a_av = batch.get("a_avail")
+    B = batch["video"].size(0)
+    dev = batch["video"].device
+    if v_av is None:
+        v_av = torch.ones(B, device=dev)
+    if a_av is None:
+        a_av = torch.ones(B, device=dev)
+    v_av, a_av = v_av.float(), a_av.float()
+    if p_dropout > 0:
+        dv, da = sample_modality_masks(B, p_dropout, dev)
+        # only drop a stream if the other one is genuinely present
+        v_av = torch.where((a_av > 0) & (dv == 0), torch.zeros_like(v_av), v_av)
+        a_av = torch.where((v_av > 0) & (da == 0), torch.zeros_like(a_av), a_av)
+    return v_av, a_av
+
+
+def enable_gradient_checkpointing(model):
+    for enc_name in ("video_encoder", "audio_encoder"):
+        enc = getattr(model, enc_name, None)
+        bb = getattr(enc, "backbone", None)
+        if bb is not None and hasattr(bb, "gradient_checkpointing_enable"):
+            try:
+                bb.gradient_checkpointing_enable()
+                print(f"Gradient checkpointing enabled on {enc_name}")
+            except Exception as e:  # noqa: BLE001
+                print(f"Gradient checkpointing unavailable on {enc_name}: {e}")
+
+
 @torch.no_grad()
 def validate(model, val_dl, device, weights):
     """Run validation and return metrics dict."""
@@ -74,20 +115,21 @@ def validate(model, val_dl, device, weights):
 
     for batch in val_dl:
         batch = move(batch, device)
+        v_av, a_av = availability_masks(batch, 0.0)
         with torch.amp.autocast("cuda", enabled=(device == "cuda")):
-            out = model(batch["video"], batch["audio"])
-            loss, _ = total_loss(out, batch, weights, model=model)
-        total_loss_val += loss.item()
-        n_batches += 1
+            out = model(batch["video"], batch["audio"], v_avail=v_av, a_avail=a_av)
+        loss, _ = total_loss(out, batch, weights, model=model)
+        if torch.isfinite(loss):
+            total_loss_val += loss.item()
+            n_batches += 1
 
-        all_v_pred += torch.sigmoid(out["logit_v"]).cpu().tolist()
-        all_a_pred += torch.sigmoid(out["logit_a"]).cpu().tolist()
+        all_v_pred += torch.sigmoid(out["logit_v"].float()).cpu().tolist()
+        all_a_pred += torch.sigmoid(out["logit_a"].float()).cpu().tolist()
         all_quad_pred += out["logit_quad"].argmax(-1).cpu().tolist()
         all_v_true += batch["video_label"].cpu().tolist()
         all_a_true += batch["audio_label"].cpu().tolist()
         all_quad_true += batch["quadrant"].cpu().tolist()
 
-    # Compute AUC
     from src.eval.metrics import per_modality, quadrant_metrics
     v_metrics = per_modality(all_v_true, all_v_pred)
     a_metrics = per_modality(all_a_true, all_a_pred)
@@ -96,15 +138,66 @@ def validate(model, val_dl, device, weights):
     model.train()
     return {
         "val_loss": total_loss_val / max(n_batches, 1),
-        "video_auc": v_metrics.get("auc", 0.0),
-        "audio_auc": a_metrics.get("auc", 0.0),
-        "quadrant_acc": q_metrics.get("accuracy", 0.0),
+        "video_auc": _nan_to_zero(v_metrics.get("auc", 0.0)),
+        "audio_auc": _nan_to_zero(a_metrics.get("auc", 0.0)),
+        "video_eer": _nan_to_zero(v_metrics.get("eer", 0.0)),
+        "audio_eer": _nan_to_zero(a_metrics.get("eer", 0.0)),
+        "quadrant_acc": q_metrics.get("acc", 0.0),
+        "quadrant_macro_f1": q_metrics.get("macro_f1", 0.0),
     }
+
+
+def _stratified_subsample(records, n_keep: int, seed: int = 0):
+    """Deterministic per-quadrant subsample (keeps class balance for quick validation)."""
+    import random as _r
+    by_q = {}
+    for i, r in enumerate(records):
+        by_q.setdefault(r.get("quadrant", "?"), []).append(i)
+    rng = _r.Random(seed)
+    keep = []
+    for idx in by_q.values():
+        rng.shuffle(idx)
+        keep += idx[: max(1, round(n_keep * len(idx) / len(records)))]
+    return [records[i] for i in sorted(keep)]
+
+
+def _nan_to_zero(x: float) -> float:
+    return 0.0 if (x is None or (isinstance(x, float) and math.isnan(x))) else float(x)
+
+
+def _lr_lambda(warmup_steps: int, total_steps: int, floor: float = 0.01):
+    def f(step: int) -> float:
+        if step < warmup_steps:
+            return (step + 1) / max(1, warmup_steps)
+        progress = (step - warmup_steps) / max(1, total_steps - warmup_steps)
+        return floor + (1 - floor) * 0.5 * (1 + math.cos(math.pi * min(1.0, progress)))
+    return f
+
+
+def _to_cpu(obj):
+    if torch.is_tensor(obj):
+        return obj.detach().to("cpu", copy=True)
+    if isinstance(obj, dict):
+        return {k: _to_cpu(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_to_cpu(v) for v in obj]
+    return copy.deepcopy(obj)
+
+
+def _snapshot(model, opt):
+    """CPU copy of model + optimizer state (keeps VRAM free on a 15 GB T4)."""
+    return {"model": _to_cpu(model.state_dict()), "optimizer": _to_cpu(opt.state_dict())}
+
+
+def _restore(model, opt, snap):
+    model.load_state_dict(snap["model"])
+    opt.load_state_dict(snap["optimizer"])   # casts state back to the param devices
 
 
 def train(cfg):
     set_seed(cfg.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    run_id = getattr(cfg, "run_id", None)
 
     # ─── Data ─────────────────────────────────────────────────────────
     root_dir = getattr(cfg, "root_dir", None)
@@ -114,19 +207,28 @@ def train(cfg):
                                         cfg.n_frames, cfg.audio_len)
     else:
         train_ds = AVDeepfakeDataset(cfg.train_manifest, cfg.shard_root,
-                                     cfg.n_frames, cfg.audio_len, root_dir=root_dir)
-    train_dl = DataLoader(train_ds, batch_size=cfg.batch_size,
-                          sampler=BalancedGeneratorSampler(train_ds.records, cfg.batch_size),
-                          num_workers=cfg.num_workers, collate_fn=collate)
+                                     cfg.n_frames, cfg.audio_len, root_dir=root_dir, train=True)
+    preflight_check(train_ds, name="train")
+    sampler = BalancedBatchSampler(train_ds.records, cfg.batch_size, seed=cfg.seed)
+    train_dl = DataLoader(train_ds, batch_size=cfg.batch_size, sampler=sampler,
+                          num_workers=cfg.num_workers, collate_fn=collate,
+                          pin_memory=(device == "cuda"), drop_last=True,
+                          persistent_workers=False)
 
     # Validation set (optional)
     val_manifest = getattr(cfg, "val_manifest", None)
     val_dl = None
     if val_manifest and os.path.exists(val_manifest):
         val_ds = AVDeepfakeDataset(val_manifest, cfg.shard_root, cfg.n_frames, cfg.audio_len,
-                                   root_dir=root_dir)
+                                   root_dir=root_dir, train=False)
+        val_max = int(getattr(cfg, "val_max_clips", 0) or 0)
+        if val_max and len(val_ds) > val_max:
+            val_ds.records = _stratified_subsample(val_ds.records, val_max)
+            print(f"Validation subsampled to {len(val_ds)} clips (val_max_clips={val_max})")
+        preflight_check(val_ds, name="val")
         val_dl = DataLoader(val_ds, batch_size=cfg.batch_size, shuffle=False,
-                            num_workers=cfg.num_workers, collate_fn=collate)
+                            num_workers=cfg.num_workers, collate_fn=collate,
+                            pin_memory=(device == "cuda"))
         print(f"Validation: {len(val_ds)} clips")
 
     # ─── Model ────────────────────────────────────────────────────────
@@ -142,32 +244,24 @@ def train(cfg):
         else:
             state = torch.load(cfg.init_from, map_location=device, weights_only=True)
             missing, unexpected = model.load_state_dict(state["model"], strict=False)
-            print(
-                f"init_from {cfg.init_from}: "
-                f"{len(missing)} missing, {len(unexpected)} unexpected keys"
-            )
+            print(f"init_from {cfg.init_from}: {len(missing)} missing, {len(unexpected)} unexpected keys")
+            if missing:
+                print(f"  missing (first 10): {missing[:10]}")
 
-    # Gradient checkpointing on video backbone (docs/02_architecture.md §9)
     if getattr(cfg, "gradient_checkpointing", True):
-        if hasattr(model, "video_encoder") and hasattr(model.video_encoder, "backbone"):
-            try:
-                model.video_encoder.backbone.gradient_checkpointing_enable()
-                print("Gradient checkpointing enabled on video backbone")
-            except Exception:
-                pass
+        enable_gradient_checkpointing(model)
 
     weights = LossWeights(**cfg.loss_weights)
 
     # Separate param groups: heads/fusion vs encoder adapters
-    enc_params = []
-    other_params = []
+    enc_params, other_params = [], []
     for name, p in model.named_parameters():
         if not p.requires_grad:
             continue
-        if "video_encoder" in name or "audio_encoder" in name:
-            enc_params.append(p)
-        else:
-            other_params.append(p)
+        (enc_params if ("video_encoder" in name or "audio_encoder" in name) else other_params).append(p)
+    n_train = sum(p.numel() for p in enc_params + other_params)
+    n_total = sum(p.numel() for p in model.parameters())
+    print(f"Parameters: {n_train:,} trainable / {n_total:,} total ({100 * n_train / max(1, n_total):.1f}%)")
 
     lr_enc = getattr(cfg, "lr_encoder", 1e-5)
     opt = torch.optim.AdamW([
@@ -175,16 +269,22 @@ def train(cfg):
         {"params": enc_params, "lr": lr_enc, "weight_decay": cfg.weight_decay},
     ])
 
-    # Cosine schedule with warmup (docs/02_architecture.md §9)
+    grad_accum = 1 if cfg.dry_run else max(1, int(getattr(cfg, "grad_accum_steps", 1)))
+    max_micro = int(getattr(cfg, "max_steps_per_epoch", 0) or 0)   # 0 = full epoch
+    n_micro = min(len(train_dl), max_micro) if max_micro else len(train_dl)
+    steps_per_epoch = max(1, n_micro // grad_accum)                # optimizer steps
     warmup_epochs = getattr(cfg, "warmup_epochs", 2)
-    total_steps = cfg.epochs * 1000  # approximate; updated per-epoch
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        opt, T_max=cfg.epochs - warmup_epochs, eta_min=cfg.lr * 0.01
-    )
+    total_opt_steps = cfg.epochs * steps_per_epoch
+    scheduler = torch.optim.lr_scheduler.LambdaLR(
+        opt, _lr_lambda(int(warmup_epochs * steps_per_epoch), total_opt_steps))
     scaler = torch.amp.GradScaler("cuda", enabled=(device == "cuda"))
+    max_norm = float(getattr(cfg, "max_grad_norm", 1.0))
+    nan_patience = int(getattr(cfg, "nan_patience", 5))
+    max_nan_restores = int(getattr(cfg, "max_nan_restores", 3))
+    print(f"Effective batch: {cfg.batch_size} x {grad_accum} = {cfg.batch_size * grad_accum}; "
+          f"{steps_per_epoch} optimizer steps/epoch; max_grad_norm={max_norm}")
 
     # ─── HF Backup ────────────────────────────────────────────────────
-    run_id = getattr(cfg, "run_id", None)
     backup = None
     start_epoch = 0
     best_auc = 0.0
@@ -198,18 +298,20 @@ def train(cfg):
         if resume is not None:
             start_epoch = resume.get("epoch", -1) + 1
             best_auc = resume.get("best_auc", 0.0)
-            # Also check _hf_meta (resume_state.json) for best_auc
             if best_auc == 0.0 and "_hf_meta" in resume:
                 best_auc = resume["_hf_meta"].get("best_auc", 0.0)
             try:
                 model.load_state_dict(resume["model"])
                 opt.load_state_dict(resume["optimizer"])
                 print(f"Resumed from HF: epoch {start_epoch}, best_auc={best_auc:.4f}")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 print(f"Resume load warning: {e} — starting from scratch")
                 start_epoch = 0
         else:
             print("No resume state found — starting fresh")
+    # fast-forward the LR schedule on resume
+    for _ in range(start_epoch * steps_per_epoch):
+        scheduler.step()
 
     # ─── Augmentation ──────────────────────────────────────────────────
     use_aug = getattr(cfg, "augment", True)
@@ -217,131 +319,137 @@ def train(cfg):
     a_aug = AudioAugmentor(p=0.5) if use_aug else None
 
     # ─── Training loop ────────────────────────────────────────────────
-    steps = 0
+    micro_steps = 0
+    opt_steps = start_epoch * steps_per_epoch
+    nan_restores = 0
+    snapshot = _snapshot(model, opt)   # last known-good weights (CPU copy)
     model.train()
-    # Store initial LRs for warmup
-    for pg in opt.param_groups:
-        pg["initial_lr"] = pg["lr"]
+    t_run = time.time()
 
     try:
         for epoch in range(start_epoch, cfg.epochs):
-            # Warmup: linear LR increase for first N epochs
-            if epoch < warmup_epochs:
-                warmup_factor = (epoch + 1) / warmup_epochs
-                for pg in opt.param_groups:
-                    pg["lr"] = pg["initial_lr"] * warmup_factor
-            elif epoch == warmup_epochs:
-                # Switch to cosine schedule
-                scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-                    opt, T_max=cfg.epochs - warmup_epochs, eta_min=cfg.lr * 0.01
-                )
-                scheduler.step()
-            else:
-                scheduler.step()
+            sampler.set_epoch(epoch)
+            epoch_loss, epoch_steps, nan_streak, nan_total = 0.0, 0, 0, 0
+            t_epoch = time.time()
+            opt.zero_grad(set_to_none=True)
+            accum = 0
 
-            epoch_loss = 0.0
-            epoch_steps = 0
-            nan_count = 0
-
-            for batch in train_dl:
+            for it, batch in enumerate(train_dl):
+                if max_micro and it >= max_micro:
+                    break
                 batch = move(batch, device)
                 batch = augment_batch(batch, v_aug, a_aug)
-                opt.zero_grad(set_to_none=True)
+                v_av, a_av = availability_masks(batch, cfg.modality_dropout)
                 with torch.amp.autocast("cuda", enabled=(device == "cuda")):
-                    v_av, a_av = sample_modality_masks(
-                        batch["video"].size(0), cfg.modality_dropout, batch["video"].device)
                     out = model(batch["video"], batch["audio"], v_avail=v_av, a_avail=a_av)
-                    loss, parts = total_loss(out, batch, weights, model=model)
-                # NaN detection — skip step if loss exploded
-                if torch.isnan(loss) or torch.isinf(loss):
-                    print(f"epoch {epoch} step {steps + 1} NaN/Inf detected — skipping step")
-                    opt.zero_grad(set_to_none=True)
-                    steps += 1
-                    nan_count += 1
-                    if nan_count >= 5:
-                        print(f"epoch {epoch} too many NaN steps ({nan_count}) — aborting epoch")
-                        break
-                    continue
-                nan_count = 0
-                scaler.scale(loss).backward()
-                scaler.unscale_(opt)
-                # Check for NaN/Inf in gradients before clipping
-                grad_ok = True
-                for p in model.parameters():
-                    if p.grad is not None and (torch.isnan(p.grad).any() or torch.isinf(p.grad).any()):
-                        grad_ok = False
-                        break
-                if not grad_ok:
-                    print(f"epoch {epoch} step {steps + 1} NaN/Inf gradient — skipping step")
-                    scaler.step(opt)
-                    scaler.update()
-                    opt.zero_grad(set_to_none=True)
-                    steps += 1
-                    nan_count += 1
-                    if nan_count >= 5:
-                        print(f"epoch {epoch} too many NaN steps ({nan_count}) — aborting epoch")
-                        break
-                    continue
-                torch.nn.utils.clip_grad_norm_(
-                    [p for p in model.parameters() if p.requires_grad], max_norm=0.5
-                )
-                scaler.step(opt)
-                scaler.update()
-                steps += 1
-                epoch_loss += loss.item()
-                epoch_steps += 1
-                if steps % cfg.log_every == 0:
-                    print(f"epoch {epoch} step {steps} " +
-                          " ".join(f"{k}={v:.4f}" for k, v in parts.items()))
+                loss, parts = total_loss(out, batch, weights, model=model)
+                micro_steps += 1
 
-                if cfg.dry_run and steps >= 2:
+                if not torch.isfinite(loss):
+                    nan_streak += 1
+                    nan_total += 1
+                    print(f"epoch {epoch} micro-step {micro_steps} non-finite loss — skipping")
+                    opt.zero_grad(set_to_none=True)
+                    accum = 0
+                else:
+                    scaler.scale(loss / grad_accum).backward()
+                    accum += 1
+                    epoch_loss += loss.item()
+                    epoch_steps += 1
+
+                if accum >= grad_accum:
+                    scaler.unscale_(opt)
+                    gnorm = torch.nn.utils.clip_grad_norm_(
+                        [p for p in model.parameters() if p.requires_grad], max_norm=max_norm)
+                    if torch.isfinite(gnorm):
+                        scaler.step(opt)      # applies the clipped update
+                        scaler.update()
+                        scheduler.step()
+                        opt_steps += 1
+                        nan_streak = 0
+                    else:
+                        # inf/NaN grads: GradScaler skips the step and lowers its scale.
+                        # This is expected occasionally right after scale growth.
+                        scaler.step(opt)
+                        scaler.update()
+                        nan_streak += 1
+                        nan_total += 1
+                        print(f"epoch {epoch} opt-step {opt_steps} non-finite grad norm — step skipped")
+                    opt.zero_grad(set_to_none=True)
+                    accum = 0
+
+                    if opt_steps % cfg.log_every == 0 and torch.isfinite(loss):
+                        lr_now = opt.param_groups[0]["lr"]
+                        print(f"epoch {epoch} step {opt_steps} " +
+                              " ".join(f"{k}={v:.4f}" for k, v in parts.items()) +
+                              f" gnorm={float(gnorm):.2f} lr={lr_now:.2e}")
+
+                if nan_streak >= nan_patience:
+                    nan_restores += 1
+                    if nan_restores > max_nan_restores:
+                        raise RuntimeError(
+                            f"Training diverged: {nan_restores} restores from NaN did not help. "
+                            "Inspect data (preflight), lower lr, or disable AMP.")
+                    _restore(model, opt, snapshot)
+                    for pg in opt.param_groups:      # after restore: halve the base LR
+                        pg["initial_lr"] = pg.get("initial_lr", pg["lr"]) * 0.5
+                    scheduler = torch.optim.lr_scheduler.LambdaLR(
+                        opt, _lr_lambda(int(warmup_epochs * steps_per_epoch), total_opt_steps))
+                    for _ in range(opt_steps):
+                        scheduler.step()
+                    scaler = torch.amp.GradScaler("cuda", enabled=(device == "cuda"))
+                    nan_streak = 0
+                    print(f"epoch {epoch}: {nan_patience} consecutive non-finite steps — restored "
+                          f"last good snapshot, halved LR (restore #{nan_restores})")
+
+                if cfg.dry_run and micro_steps >= 2 * grad_accum:
                     print("[dry-run] forward/backward OK, stopping.")
                     if backup:
                         backup.emergency_push(model, epoch)
                     return model
 
             # ─── End of epoch ──────────────────────────────────────────
-            epoch_aborted = nan_count >= 5
-            if epoch_aborted:
-                print(f"epoch {epoch} ABORTED due to NaN — skipping save/validate")
-            else:
-                avg_loss = epoch_loss / max(epoch_steps, 1)
-                _save(model, cfg, epoch)
+            avg_loss = epoch_loss / max(epoch_steps, 1)
+            dt = time.time() - t_epoch
+            print(f"epoch {epoch} done in {dt / 60:.1f} min — loss={avg_loss:.4f} "
+                  f"micro-steps={epoch_steps} skipped={nan_total}")
+            if epoch_steps == 0:
+                raise RuntimeError(f"epoch {epoch}: no finite training step at all — aborting")
 
-                # Validation
-                metrics = {"avg_loss": avg_loss}
-                if val_dl:
-                    val_metrics = validate(model, val_dl, device, weights)
-                    metrics.update(val_metrics)
-                    val_auc = (val_metrics["video_auc"] + val_metrics["audio_auc"]) / 2
-                    print(f"epoch {epoch} — loss={avg_loss:.4f} val_video_auc={val_metrics['video_auc']:.4f} "
-                          f"val_audio_auc={val_metrics['audio_auc']:.4f} val_quad_acc={val_metrics['quadrant_acc']:.4f}")
+            metrics = {"avg_loss": avg_loss, "epoch_minutes": dt / 60, "nan_steps": nan_total}
+            if val_dl:
+                val_metrics = validate(model, val_dl, device, weights)
+                metrics.update(val_metrics)
+                val_auc = (val_metrics["video_auc"] + val_metrics["audio_auc"]) / 2
+                print(f"epoch {epoch} — val_loss={val_metrics['val_loss']:.4f} "
+                      f"video_auc={val_metrics['video_auc']:.4f} audio_auc={val_metrics['audio_auc']:.4f} "
+                      f"quad_acc={val_metrics['quadrant_acc']:.4f} quad_f1={val_metrics['quadrant_macro_f1']:.4f}")
+                if val_auc > best_auc:
+                    best_auc = val_auc
+                    _save(model, cfg, epoch, "best")
+                    if backup:
+                        backup.push_best(model, epoch, val_auc)
+                    print(f"  ** new best mean AUC: {val_auc:.4f}")
+            _save(model, cfg, epoch, "last")
+            snapshot = _snapshot(model, opt)
 
-                    # Push best model
-                    if val_auc > best_auc:
-                        best_auc = val_auc
-                        if backup:
-                            backup.push_best(model, epoch, val_auc)
-                        print(f"  ** new best AUC: {val_auc:.4f}")
-                else:
-                    print(f"epoch {epoch} — loss={avg_loss:.4f}")
+            if backup:
+                metrics["best_auc"] = best_auc
+                backup.push_checkpoint(model, opt, epoch, vars(cfg), metrics,
+                                       milestone_every=int(getattr(cfg, "milestone_every", 5)),
+                                       keep_milestones=int(getattr(cfg, "keep_milestones", 3)),
+                                       resume_extras={"best_auc": best_auc})
+                backup.push_log({
+                    "epoch": epoch, "steps": epoch_steps,
+                    **{k: v for k, v in metrics.items() if isinstance(v, (int, float))},
+                    "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                })
 
-                # Push to HF
-                if backup:
-                    metrics["best_auc"] = best_auc
-                    backup.push_checkpoint(model, opt, epoch, vars(cfg), metrics,
-                                           resume_extras={"best_auc": best_auc})
-                    backup.push_log({
-                        "epoch": epoch, "avg_loss": avg_loss, "steps": epoch_steps,
-                        **{k: v for k, v in metrics.items() if isinstance(v, float)},
-                        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
-                    })
-
-        # ─── Run complete ─────────────────────────────────────────────
-        final_metrics = {"epochs": cfg.epochs, "total_steps": steps, "best_auc": best_auc}
+        final_metrics = {"epochs": cfg.epochs, "total_opt_steps": opt_steps, "best_auc": best_auc,
+                         "minutes": (time.time() - t_run) / 60}
         if backup:
             backup.push_final(final_metrics)
-            print(f"Training complete. Best AUC: {best_auc:.4f}")
+        print(f"Training complete. Best mean AUC: {best_auc:.4f}")
 
     except KeyboardInterrupt:
         print("\nInterrupted — pushing emergency checkpoint...")
@@ -357,11 +465,16 @@ def train(cfg):
     return model
 
 
-def _save(model, cfg, epoch):
-    os.makedirs(cfg.out_dir, exist_ok=True)
-    path = f"{cfg.out_dir}/david_net_epoch{epoch}.pt"
-    torch.save({"model": model.state_dict(), "cfg": vars(cfg)}, path)
+def _save(model, cfg, epoch, tag: str = "last"):
+    """Local checkpoint. Only `last.pt` and `best.pt` per run are kept (a 1 GB file per
+    epoch filled Kaggle's 20 GB working disk before)."""
+    run_id = getattr(cfg, "run_id", None) or "david_net"
+    d = os.path.join(cfg.out_dir, run_id)
+    os.makedirs(d, exist_ok=True)
+    path = os.path.join(d, f"{tag}.pt")
+    torch.save({"model": model.state_dict(), "cfg": vars(cfg), "epoch": epoch}, path)
     print(f"saved {path}")
+    return path
 
 
 def main():

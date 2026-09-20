@@ -132,11 +132,37 @@ Self-blending (video) and vocoder copy-synthesis (audio) each exist as *unimodal
 ## 9. Training recipe (defaults)
 
 - Optimizer AdamW, lr 1e-4 (heads/fusion) / 1e-5 (encoder adapters), cosine schedule, 30–50 epochs, warmup 2 epochs.
-- Clip length 2–4 s, 16–32 frames; batch built with **generator-balanced** sampling for cross-generator robustness.
+- Clip length 4 s (16 frames + 64k audio samples from the same window); batches built by
+  `BalancedBatchSampler`: every batch cycles the four quadrants and, within a quadrant,
+  its generators (minority strata are re-drawn with replacement) so both classes of both
+  modality heads are present in every step.
 - Augmentation: video (JPEG/HEVC recompression at random CRF, resize, blur, color jitter), audio (MUSAN noise, RIR reverb, codec simulation, SpecAugment).
 - **BF16** mixed precision, gradient checkpointing on the video backbone (see `07_compute_and_hardware.md`).
 - On DGX Spark, prefer the **cached-feature** regime: freeze encoders, precompute VideoMAE/WavLM features once, train fusion+heads on the cache; keep an optional LoRA end-to-end finetune for the final model.
 - **Leave-one-generator-out** and **cross-dataset** are held out from training entirely.
+
+### 9b. Numerical-stability contract (implemented in `src/models`, `src/training`)
+
+Learned from the first Kaggle run (T4 = fp16 autocast, no BF16):
+
+- Encoder token streams are **LayerNorm-ed before fusion** (`norm_v_in`/`norm_a_in`);
+  VideoMAE's last hidden state is un-normalized and otherwise dominates the pooled
+  embedding with a shared component (cos-sim ≈ 1 for every pair → SupCon at chance).
+- The fusion blocks are **pre-LN** (`CrossModalBlock`: LN → attention → residual, LN →
+  FF → residual) with a final LN (`norm_*_out`); the residual stream is never normalized
+  in place, so its magnitude stays bounded under fp16.
+- The sync module's temperature is parameterized as `logit_scale = log(1/τ)` clamped to
+  `log(100)` (τ ≥ 0.01, CLIP convention) and the InfoNCE logits are computed in fp32.
+- Every loss term is computed in fp32 on `.float()` copies of the fp16 logits.
+- Inputs: frames in `[0,1]` are ImageNet-normalized *inside* `VideoMAEEncoder`; raw
+  waveforms are clamped to `[-1,1]` (WavLM-base-plus was pretrained without utterance
+  normalization, `do_normalize=False`).
+- Trainer rails: gradient clipping (`max_grad_norm`), skip non-finite steps, restore the
+  last good snapshot + halve LR after `nan_patience` consecutive failures, raise after
+  `max_nan_restores` — a run can no longer "finish" with AUC = 0.5 after NaN-looping.
+- Data rails: the loader never fabricates tensors when a media root is configured; a
+  preflight decodes real samples before the first step; video and audio come from the
+  **same 4 s window** so the sync objective sees aligned streams.
 
 ## 10. Complexity / deployment notes
 

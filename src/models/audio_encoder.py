@@ -47,6 +47,10 @@ class WavLMEncoder(nn.Module):
                 p.requires_grad = False
 
     def forward(self, waveform):
+        # wavlm-base-plus was pretrained on raw (un-normalized) 16 kHz waveforms
+        # (preprocessor_config: do_normalize=False) and its conv front-end is
+        # group-normed, so only guard against pathological gain / dtype.
+        waveform = waveform.float().clamp(-1.0, 1.0)
         out = self.backbone(waveform).last_hidden_state  # (B, L, hidden)
         return self.project(out)
 

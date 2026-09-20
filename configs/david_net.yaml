@@ -30,6 +30,7 @@ shard_root: null               # dir of preprocessed *_video.pt / *_audio.pt sha
 feature_cache: null            # dir of cached SSL features (Phase A regime);
                                # produce with: python -m src.data.extract_features
 train_manifest: src/data/splits/train.jsonl
+# root_dir: data/fakeavceleb      # REQUIRED for real media; omitted = dummy random tensors (dry-run only)
 
 # --- missing-modality robustness ---
 modality_dropout: 0.15         # prob a training sample loses one stream (never both);
@@ -37,10 +38,14 @@ modality_dropout: 0.15         # prob a training sample loses one stream (never 
 
 # --- optimization ---
 batch_size: 4
+grad_accum_steps: 1
 num_workers: 0
 epochs: 30
 lr: 1.0e-4
+lr_encoder: 1.0e-5
 weight_decay: 1.0e-4
+max_grad_norm: 1.0
+warmup_epochs: 2
 log_every: 10
 out_dir: runs
 

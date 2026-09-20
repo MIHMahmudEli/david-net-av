@@ -56,26 +56,45 @@ _ID_RE = re.compile(r"(id\d+)")
 def _load_meta_csv(root: Path) -> dict:
     """meta_data.csv (if present) -> lookup table for method/race/gender.
 
-    Keys: the row's full relative path (authoritative), plus bare filename ONLY
-    when that filename is unique in the csv — FakeAVCeleb clip names like
-    00000.mp4 repeat across quadrant folders, so ambiguous filenames are dropped
-    rather than risking cross-quadrant metadata pollution.
+    FakeAVCeleb v1.2 layout (header): source,target1,target2,method,category,type,
+    race,gender,path,<unnamed>  where `path` is the bare FILENAME and the unnamed last
+    column is the directory ("FakeAVCeleb/FakeVideo-FakeAudio/African/men/id00076").
+    Keys: full relative path "<quadrant-dir>/<race>/<gender>/<id>/<file>" (authoritative),
+    plus bare filename ONLY when unique in the csv (00000.mp4 repeats across folders).
     """
     path = root / "meta_data.csv"
     if not path.exists():
         return {}
     by_path, by_name, name_collisions = {}, {}, set()
     with open(path, newline="", encoding="utf-8-sig") as f:
-        for row in csv.DictReader(f):
-            row = {(k or "").strip().lower(): (v or "").strip() for k, v in row.items()}
+        reader = csv.reader(f)
+        header = [(h or "").strip().lower() for h in next(reader)]
+        for raw in reader:
+            if not raw:
+                continue
+            row = {header[i] if i < len(header) else f"_col{i}": (v or "").strip()
+                   for i, v in enumerate(raw)}
             meta = {"method": row.get("method", ""),
                     "race": row.get("race", ""),
                     "gender": row.get("gender", "")}
-            name = row.get("filename") or row.get("path", "").replace("\\", "/").split("/")[-1]
-            rel = row.get("path", "").replace("\\", "/").strip("/")
+            p_col = row.get("path", "").replace("\\", "/").strip("/")
+            name = row.get("filename") or p_col.split("/")[-1]
+            # directory: any unnamed / extra column that looks like a path
+            dir_col = ""
+            for k, v in row.items():
+                if (k == "" or k.startswith("_col")) and "/" in v:
+                    dir_col = v.replace("\\", "/").strip("/")
+            if dir_col:
+                # drop the dataset-name prefix ("FakeAVCeleb/") so keys are root-relative
+                parts = dir_col.split("/")
+                while parts and parts[0] not in QUAD_DIRS:
+                    parts = parts[1:]
+                rel = "/".join(parts + [name]) if parts else ""
+            elif "/" in p_col:
+                rel = p_col if p_col.endswith(name) else f"{p_col}/{name}"
+            else:
+                rel = ""
             if rel:
-                if name and not rel.endswith(name):
-                    rel = f"{rel}/{name}"
                 by_path[rel] = meta
             if name:
                 if name in by_name:

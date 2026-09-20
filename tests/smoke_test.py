@@ -20,6 +20,13 @@ Credentials are read from .env automatically.
 from __future__ import annotations
 
 import json, os, sys, tempfile, time, traceback, subprocess
+
+if __name__ != "__main__":
+    # This is a standalone script (network calls to HF + Kaggle, sys.exit at the end).
+    # pytest collects `*_test.py`; running it at import time aborted the whole suite.
+    import pytest
+    pytest.skip("standalone smoke script — run `python tests/smoke_test.py`",
+                allow_module_level=True)
 from pathlib import Path
 from types import SimpleNamespace
 

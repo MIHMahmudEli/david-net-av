@@ -54,6 +54,9 @@ generalization experiments to save time.
   methodology text. (This drifted once; the user caught it.)
 - **Every reported number = a committed config + a committed split file.**
   Subject-disjoint splits, seeds {42,43,44}, mean±std. No exceptions.
+- **Train on `splits/<ds>/train.jsonl`, validate on `val.jsonl`, report on
+  `test.jsonl`.** Run 1 trained on the full manifest (train+val+test) — any number from
+  such a run is leakage and must be discarded.
 - **Tests must pass before pushing:** `python -m pytest -q` from repo root with
   `PYTHONPATH` set to the repo root.
 - **This machine (Windows dev box):** MiKTeX ✓, matplotlib ✓, torch-CPU ✓,
@@ -213,6 +216,34 @@ python -m src.eval.figures --results results/ --out report/figures/generated
   all-ones localization mask via `segments_to_mask` clipping.
 - **PowerShell:** no `&&`; multi-line git commit messages via `-F` file; python
   inline `-c` strings with backslash paths break — use forward slashes.
+- **THE run-1 disaster (2026-09-20): `root_dir` ≠ manifest root → training on
+  `torch.randn`.** `build_manifest.py` was pointed at `<mount>/FakeAVCeleb_v1.2` (so
+  `rel_path` is relative to that) while the notebook handed training `<mount>`. No file
+  was found, and `AVDeepfakeDataset` silently substituted random tensors for EVERY
+  sample. QACP + 3 Stage-1 seeds (≈20 GPU-hours) trained on noise: audio loss frozen at
+  0.1733 (= focal loss at the class prior), val AUC 0.5, QACP terms at ln(B−1), then
+  NaN loops. Fixes: the loader now RAISES when a configured root has no file, auto-
+  resolves one directory level, `preflight_check()` decodes real samples before step 0,
+  and the notebook asserts the first clip exists + decodes (Cell 7). **Never re-add a
+  random-tensor fallback for real runs.**
+- **Diagnosing "flat" losses:** a focal-BCE stuck at exactly 0.1733 (= 0.25·ln 2) means a
+  constant logit at a 50/50 prior; a SupCon term stuck at ln(B−1) means collapsed or
+  input-independent embeddings. Both mean "the branch sees no information" — check the
+  data before touching the model.
+- **FakeAVCeleb `meta_data.csv`** puts the directory in an *unnamed trailing column* and the
+  bare filename in `path`; the old parser matched nothing, so every generator became
+  `unknown`/`faceswap` (LOGO splits and the balanced sampler were meaningless). Fixed in
+  `_load_meta_csv`; verify with `python scripts/build_manifest.py` — expect
+  wav2lip=9602, fsgan=3964, fsgan-wav2lip=3553, faceswap-wav2lip≈2700, faceswap=730,
+  rtvc=500, real=500.
+- **Kaggle image (Sept 2026):** torch 2.10, torchaudio 2.10 + torchcodec 0.10,
+  transformers 5.0, cv2 4.13, ffmpeg at /usr/bin. `torchaudio.load` on mp4 works; the
+  decoder nevertheless uses ffmpeg pipes (single aligned A/V window, no seeking).
+- **Cross-dataset manifests:** DFDC labels live in per-part `metadata.json`
+  (REAL/FAKE) — not per-clip JSON; ASVspoof protocol label is the *last* token of the
+  line (`... - - bonafide`). Both converters were reading the wrong field → single-class
+  manifests → AUC = NaN. Audio-only corpora go through the model with `v_avail = 0`
+  (null video token), never with random video.
 
 ## 7. Filling the thesis report (report/, OBE 2.1)
 

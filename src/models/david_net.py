@@ -12,6 +12,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -30,7 +32,13 @@ class DavidNetConfig:
 
 
 class CrossModalBlock(nn.Module):
-    """One layer of self- + cross-attention over video/audio token streams."""
+    """One layer of self- + cross-attention over video/audio token streams.
+
+    Pre-LN formulation (every sub-layer reads a normalized copy of the residual stream;
+    the stream itself is never normalized in place). The original post-LN variant let
+    the residual stream grow without bound under fp16 autocast and was one of the
+    ingredients of the Stage-1 NaN blow-ups on Kaggle.
+    """
 
     def __init__(self, d_model: int, n_heads: int, dropout: float):
         super().__init__()
@@ -38,20 +46,24 @@ class CrossModalBlock(nn.Module):
         self.sa_a = nn.MultiheadAttention(d_model, n_heads, dropout=dropout, batch_first=True)
         self.ca_v = nn.MultiheadAttention(d_model, n_heads, dropout=dropout, batch_first=True)
         self.ca_a = nn.MultiheadAttention(d_model, n_heads, dropout=dropout, batch_first=True)
-        self.ln_v = nn.LayerNorm(d_model)
-        self.ln_a = nn.LayerNorm(d_model)
+        self.ln_sa_v, self.ln_sa_a = nn.LayerNorm(d_model), nn.LayerNorm(d_model)
+        self.ln_ca_v, self.ln_ca_a = nn.LayerNorm(d_model), nn.LayerNorm(d_model)
+        self.ln_ff_v, self.ln_ff_a = nn.LayerNorm(d_model), nn.LayerNorm(d_model)
         self.ff_v = _ff(d_model, dropout)
         self.ff_a = _ff(d_model, dropout)
+        self.drop = nn.Dropout(dropout)
 
     def forward(self, v, a):
-        v = v + self.sa_v(v, v, v, need_weights=False)[0]
-        a = a + self.sa_a(a, a, a, need_weights=False)[0]
-        v_c, attn_v = self.ca_v(v, a, a, need_weights=True)
-        a_c, attn_a = self.ca_a(a, v, v, need_weights=True)
-        v = self.ln_v(v + v_c)
-        a = self.ln_a(a + a_c)
-        v = v + self.ff_v(v)
-        a = a + self.ff_a(a)
+        hv, ha = self.ln_sa_v(v), self.ln_sa_a(a)
+        v = v + self.drop(self.sa_v(hv, hv, hv, need_weights=False)[0])
+        a = a + self.drop(self.sa_a(ha, ha, ha, need_weights=False)[0])
+        hv, ha = self.ln_ca_v(v), self.ln_ca_a(a)
+        v_c, attn_v = self.ca_v(hv, ha, ha, need_weights=True)
+        a_c, attn_a = self.ca_a(ha, hv, hv, need_weights=True)
+        v = v + self.drop(v_c)
+        a = a + self.drop(a_c)
+        v = v + self.ff_v(self.ln_ff_v(v))
+        a = a + self.ff_a(self.ln_ff_a(a))
         return v, a, (attn_v, attn_a)
 
 
@@ -65,11 +77,19 @@ def _ff(d_model: int, dropout: float) -> nn.Module:
 class SyncModule(nn.Module):
     """Windowed contrastive AV synchronization → consistency embedding + per-frame agreement."""
 
+    MAX_LOGIT_SCALE = math.log(100.0)   # temperature floor 0.01 (CLIP convention)
+
     def __init__(self, d_model: int):
         super().__init__()
         self.proj_v = nn.Linear(d_model, d_model)
         self.proj_a = nn.Linear(d_model, d_model)
-        self.temp = nn.Parameter(torch.tensor(0.07))
+        # learnable log(1/temperature); init 1/0.07. The old raw `temp` parameter was
+        # clamped at 1e-3, i.e. logits x1000 -> fp16 overflow -> NaN.
+        self.logit_scale = nn.Parameter(torch.tensor(math.log(1.0 / 0.07)))
+
+    @property
+    def temp(self) -> torch.Tensor:
+        return torch.exp(-self.logit_scale.clamp(max=self.MAX_LOGIT_SCALE))
 
     def forward(self, v, a):
         # v: (B, Lv, d), a: (B, La, d). Align to common length by interpolation.
@@ -81,11 +101,12 @@ class SyncModule(nn.Module):
         return z_c, agreement, (vv, aa)
 
     def contrastive_loss(self, vv, aa):
-        """InfoNCE over aligned windows (positives on the diagonal)."""
+        """InfoNCE over aligned windows (positives on the diagonal). Computed in fp32."""
         B, L, d = vv.shape
-        v = vv.reshape(B * L, d)
-        a = aa.reshape(B * L, d)
-        logits = v @ a.t() / self.temp.clamp(min=1e-3)
+        v = vv.reshape(B * L, d).float()
+        a = aa.reshape(B * L, d).float()
+        scale = self.logit_scale.clamp(max=self.MAX_LOGIT_SCALE).exp().float()
+        logits = (v @ a.t()) * scale
         target = torch.arange(B * L, device=v.device)
         return 0.5 * (F.cross_entropy(logits, target) + F.cross_entropy(logits.t(), target))
 
@@ -105,6 +126,14 @@ class DavidNet(nn.Module):
             [CrossModalBlock(d, cfg.n_heads, cfg.dropout) for _ in range(cfg.n_fusion_layers)]
         )
         self.sync = SyncModule(d) if cfg.use_sync else None
+        # Normalize encoder token streams before fusion: VideoMAE/WavLM last hidden
+        # states have very different scales; without this the pooled embeddings are
+        # dominated by a large shared component (cos-sim ~1 for every pair).
+        self.norm_v_in = nn.LayerNorm(d)
+        self.norm_a_in = nn.LayerNorm(d)
+        # final LN of the pre-LN fusion stack (heads/sync read normalized streams)
+        self.norm_v_out = nn.LayerNorm(d)
+        self.norm_a_out = nn.LayerNorm(d)
 
         # Learnable "missing modality" tokens: substituted for an absent stream so the
         # same network handles audio-only inputs and silent (video-only) clips.
@@ -127,8 +156,8 @@ class DavidNet(nn.Module):
         embedding z_c is zeroed for samples lacking either modality (no
         cross-modal evidence exists for them).
         """
-        v = self.video_encoder(video)   # (B, Lv, d)
-        a = self.audio_encoder(audio)   # (B, La, d)
+        v = self.norm_v_in(self.video_encoder(video))   # (B, Lv, d)
+        a = self.norm_a_in(self.audio_encoder(audio))   # (B, La, d)
         B = v.size(0)
 
         if v_avail is None:
@@ -145,6 +174,7 @@ class DavidNet(nn.Module):
         for blk in self.fusion:
             v, a, attn = blk(v, a)
             attn_maps.append(attn)
+        v, a = self.norm_v_out(v), self.norm_a_out(a)
 
         z_v, z_a = v.mean(1), a.mean(1)  # pooled modality-specific authenticity
         agreement = None

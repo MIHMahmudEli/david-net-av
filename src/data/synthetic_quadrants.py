@@ -160,22 +160,93 @@ def build_pseudo_sample(frames: torch.Tensor, wave: torch.Tensor,
 class QACPDataset(torch.utils.data.Dataset):
     """Wraps a manifest of REAL clips; emits pseudo-quadrant samples on the fly.
 
+    Pseudo-classes are assigned per epoch by `set_epoch` (a fixed permutation table)
+    instead of being drawn inside __getitem__, so `QACPBalancedSampler` can lay out
+    every mini-batch with distinct classes -> both values of video_label, audio_label
+    and sync_label are present in (almost) every batch and SupCon always has positives
+    AND negatives on each axis. `views_per_clip` repeats each pristine clip that many
+    times per epoch under different pseudo-classes (FakeAVCeleb has only ~350 train
+    reals, far too few for one view per epoch).
+
     For DGX Spark, prefer generating these offline once and caching SSL features
-    (docs/07_compute_and_hardware.md §2) — this on-the-fly version is for dry runs
-    and for the Phase-B end-to-end finetune.
+    (docs/07_compute_and_hardware.md §2).
     """
 
-    def __init__(self, base_dataset):
+    def __init__(self, base_dataset, views_per_clip: int = 4, seed: int = 0):
         # base_dataset must yield dicts with 'video' (T,3,H,W) and 'audio' (N,)
         self.base = base_dataset
+        self.views = max(1, int(views_per_clip))
+        self.seed = seed
+        self.n_base = len(base_dataset)
+        self.set_epoch(0)
 
     def __len__(self):
-        return len(self.base)
+        return self.n_base * self.views
+
+    def set_epoch(self, epoch: int):
+        """Assign a pseudo-class to every (clip, view) slot for this epoch."""
+        rng = random.Random(self.seed * 1000 + epoch)
+        n = len(self)
+        # balanced multiset of classes, shuffled -> each class ~n/5 times
+        classes = [QACP_CLASSES[i % len(QACP_CLASSES)] for i in range(n)]
+        rng.shuffle(classes)
+        self.class_of = classes
+        self.epoch = epoch
 
     def __getitem__(self, i):
-        rec = self.base[i]
-        donor = self.base[random.randrange(len(self.base))]
-        return build_pseudo_sample(rec["video"], rec["audio"], donor_wave=donor["audio"])
+        rec = self.base[i % self.n_base]
+        cls = self.class_of[i]
+        donor_wave = None
+        if cls == "MISMATCH":
+            j = random.randrange(self.n_base - 1)
+            j = j + 1 if j >= (i % self.n_base) else j   # never the same clip
+            donor_wave = self.base[j]["audio"]
+        return build_pseudo_sample(rec["video"], rec["audio"], donor_wave=donor_wave,
+                                   pseudo_class=cls)
+
+
+class QACPBalancedSampler(torch.utils.data.Sampler):
+    """Orders indices so that consecutive `batch_size` items have distinct pseudo-classes.
+
+    Must be given the same QACPDataset (it reads `class_of`); call `set_epoch` on both
+    before each epoch so the sampler and the dataset agree on the class table.
+    """
+
+    def __init__(self, dataset: QACPDataset, batch_size: int, seed: int = 0):
+        self.ds = dataset
+        self.bs = batch_size
+        self.seed = seed
+        self.epoch = 0
+
+    def set_epoch(self, epoch: int):
+        self.epoch = epoch
+
+    def __iter__(self):
+        rng = random.Random(self.seed * 7919 + self.epoch)
+        buckets = {c: [] for c in QACP_CLASSES}
+        for i, c in enumerate(self.ds.class_of):
+            buckets[c].append(i)
+        for b in buckets.values():
+            rng.shuffle(b)
+        order = list(QACP_CLASSES)
+        out = []
+        start = 0
+        while any(buckets.values()):
+            batch = []
+            k = 0
+            while len(batch) < self.bs and k < len(order):
+                c = order[(start + k) % len(order)]
+                k += 1
+                if buckets[c]:
+                    batch.append(buckets[c].pop())
+            start += 1
+            if not batch:
+                break
+            out.extend(batch)
+        return iter(out)
+
+    def __len__(self):
+        return len(self.ds)
 
 
 def _ensure_video_shape(v: torch.Tensor) -> torch.Tensor:
@@ -210,85 +281,7 @@ def collate_qacp(batch):
     return out
 
 
-class QACPStratifiedSampler(torch.utils.data.Sampler):
-    """Yields mini-batch index lists that are guaranteed to contain at least
-    `min_per_class` samples from the *same* pseudo-class label.
-
-    Strategy: shuffle within each class bucket, then interleave so that every
-    window of `batch_size` indices contains at least one repeated class.
-    This is a lightweight approximation of stratified sampling that avoids
-    the need to pre-label all items in the dataset (labels are assigned
-    stochastically at __getitem__ time in QACPDataset).
-
-    Instead, we just ensure the sampler repeats the dataset index pattern such
-    that batch slices will statistically contain label repeats.  The actual
-    class assignment still happens in __getitem__, but with a controlled index
-    reuse pattern.
-
-    For true stratification at small batch sizes, use `collate_qacp_stratified`
-    which constructs a guaranteed-positive-pair batch at collation time.
-    """
-    def __init__(self, dataset_len: int, batch_size: int, num_pseudo_classes: int = 5):
-        self.n = dataset_len
-        self.bs = batch_size
-        self.n_cls = num_pseudo_classes
-
-    def __iter__(self):
-        # Repeat every 'group_size' consecutive indices once to guarantee overlap.
-        # e.g. for bs=4, n_cls=5: emit [i, i+1, i+2, i+1] so index i+1 appears twice
-        # → QACPDataset will re-sample its class stochastically, giving a ~20% collision
-        # rate per repeated index (much better than pure random at bs=4, 5 classes).
-        group_size = max(self.bs - 1, 1)
-        indices = []
-        perm = torch.randperm(self.n).tolist()
-        i = 0
-        while i < len(perm):
-            chunk = perm[i: i + group_size]
-            if chunk:
-                indices.extend(chunk)
-                # duplicate one random element from the chunk to bias positive-pair formation
-                indices.append(random.choice(chunk))
-            i += group_size
-        return iter(indices)
-
-    def __len__(self):
-        group_size = max(self.bs - 1, 1)
-        n_groups = (self.n + group_size - 1) // group_size
-        return n_groups * (group_size + 1)
-
-
-def collate_qacp_stratified(batch):
-    """Like collate_qacp, but guarantees the batch contains at least one positive pair
-    for each of the three QACP label spaces (video_label, audio_label, sync_label).
-
-    When all batch items have the same unique label on a given axis, we duplicate
-    one item and flip its pseudo_class to create a forced positive pair.  This is
-    a lightweight collation-time fix — no dataset re-sampling required.
-    """
-    # ------ check/force positive pairs for each label axis --------------------
-    def _ensure_pair(batch, key, values=(0, 1)):
-        """If all `key` labels are the same, duplicate one item with the other value."""
-        seen = {b[key].item() for b in batch}
-        if len(seen) == 1:  # all same → no positive pairs possible
-            # Add a synthetic item by cloning the last item and flipping its label
-            donor = dict(batch[-1])  # shallow copy
-            current = donor[key].item()
-            flip = [v for v in values if v != current]
-            if flip:
-                donor = {k: v.clone() if torch.is_tensor(v) else v for k, v in donor.items()}
-                donor[key] = torch.tensor(flip[0])
-                batch = list(batch) + [donor]
-        return batch
-
-    batch = _ensure_pair(batch, "video_label", (0, 1))
-    batch = _ensure_pair(batch, "audio_label", (0, 1))
-    batch = _ensure_pair(batch, "sync_label", (0, 1))
-
-    out = {}
-    for k in ("video", "audio", "video_label", "audio_label", "sync_label"):
-        items = [b[k] for b in batch]
-        if k == "video":
-            items = [_ensure_video_shape(v) for v in items]
-        out[k] = torch.stack(items)
-    out["pseudo_class"] = [b["pseudo_class"] for b in batch]
-    return out
+# NOTE: the former `collate_qacp_stratified` duplicated a sample and FLIPPED its label
+# whenever a batch was label-homogeneous. That injects a contradictory (identical
+# content, opposite label) pair into SupCon and was one cause of the flat QACP loss.
+# Balanced batches are now guaranteed upstream by QACPBalancedSampler instead.
