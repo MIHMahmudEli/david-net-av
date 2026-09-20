@@ -241,8 +241,12 @@ class BalancedBatchSampler(torch.utils.data.Sampler):
         self.quadrants = sorted(strata)
         self.strata = {q: {g: idx for g, idx in gens.items()} for q, gens in strata.items()}
 
-    def set_epoch(self, epoch: int):
+    def set_epoch(self, epoch: int, skip: int = 0):
+        """`skip` = number of samples already consumed in this epoch (mid-epoch resume).
+        The sequence is a pure function of (seed, epoch), so skipping reproduces exactly
+        the batches a killed session would have seen next."""
         self.epoch = epoch
+        self.skip = max(0, int(skip))
 
     def __iter__(self):
         rng = random.Random(self.seed + self.epoch)
@@ -254,7 +258,8 @@ class BalancedBatchSampler(torch.utils.data.Sampler):
         gen_order = {q: sorted(gens) for q, gens in pools.items()}
         gen_cursor = {q: 0 for q in pools}
         q_cursor = rng.randrange(len(self.quadrants))
-        for _ in range(self.n):
+        skip = getattr(self, "skip", 0)
+        for k in range(self.n):
             q = self.quadrants[q_cursor % len(self.quadrants)]
             q_cursor += 1
             gens = gen_order[q]
@@ -266,10 +271,11 @@ class BalancedBatchSampler(torch.utils.data.Sampler):
                 rng.shuffle(pool)
                 c = 0
             cursors[q][g] = c + 1
-            yield pool[c]
+            if k >= skip:
+                yield pool[c]
 
     def __len__(self):
-        return self.n
+        return max(0, self.n - getattr(self, "skip", 0))
 
 
 # kept for backward compatibility with older configs / scripts

@@ -328,6 +328,8 @@ def train(cfg):
     backup = None
     start_epoch = 0
     best_auc = 0.0
+    skip_samples = 0                       # mid-epoch resume offset (samples)
+    ckpt_every = int(getattr(cfg, "checkpoint_every_steps", 300) or 0)   # optimizer steps; 0 = off
 
     if run_id:
         from src.utils.hf_backup import HFBackup
@@ -341,19 +343,25 @@ def train(cfg):
         if resume is not None:
             start_epoch = resume.get("epoch", -1) + 1
             best_auc = resume.get("best_auc", 0.0)
-            if best_auc == 0.0 and "_hf_meta" in resume:
-                best_auc = resume["_hf_meta"].get("best_auc", 0.0)
+            meta = resume.get("_hf_meta", {}) or {}
+            if best_auc == 0.0:
+                best_auc = meta.get("best_auc", 0.0)
+            # mid-epoch checkpoint: resume inside the epoch at the recorded sample offset
+            if meta.get("partial_epoch") is not None and int(meta["partial_epoch"]) >= start_epoch:
+                start_epoch = int(meta["partial_epoch"])
+                skip_samples = int(meta.get("partial_samples", 0))
             try:
                 model.load_state_dict(resume["model"])
                 opt.load_state_dict(resume["optimizer"])
-                print(f"Resumed from HF: epoch {start_epoch}, best_auc={best_auc:.4f}")
+                print(f"Resumed from HF: epoch {start_epoch}"
+                      f"{f' (+{skip_samples} samples into it)' if skip_samples else ''}, best_auc={best_auc:.4f}")
             except Exception as e:  # noqa: BLE001
                 print(f"Resume load warning: {e} — starting from scratch")
-                start_epoch = 0
+                start_epoch, skip_samples = 0, 0
         else:
             print("No resume state found — starting fresh")
-    # fast-forward the LR schedule on resume
-    for _ in range(start_epoch * steps_per_epoch):
+    # fast-forward the LR schedule on resume (whole epochs + the partial one)
+    for _ in range(start_epoch * steps_per_epoch + skip_samples // (cfg.batch_size * grad_accum)):
         scheduler.step()
 
     # ─── Augmentation ──────────────────────────────────────────────────
@@ -363,7 +371,7 @@ def train(cfg):
 
     # ─── Training loop ────────────────────────────────────────────────
     micro_steps = 0
-    opt_steps = start_epoch * steps_per_epoch
+    opt_steps = start_epoch * steps_per_epoch + skip_samples // (cfg.batch_size * grad_accum)
     nan_restores = 0
     _host_mem("before-snapshot")
     snapshot = _snapshot(model, opt)   # last known-good weights (fp16 CPU copy)
@@ -373,15 +381,19 @@ def train(cfg):
 
     try:
         for epoch in range(start_epoch, cfg.epochs):
-            sampler.set_epoch(epoch)
+            epoch_skip = skip_samples if epoch == start_epoch else 0
+            sampler.set_epoch(epoch, skip=epoch_skip)
             epoch_loss, epoch_steps, nan_streak, nan_total = 0.0, 0, 0, 0
             t_epoch = time.time()
             opt.zero_grad(set_to_none=True)
             accum = 0
+            seen = epoch_skip                  # samples consumed in this epoch
+            steps_this_epoch = 0
 
             for it, batch in enumerate(train_dl):
                 if max_micro and it >= max_micro:
                     break
+                seen += batch["video"].size(0)
                 batch = move(batch, device)
                 batch = augment_batch(batch, v_aug, a_aug)
                 v_av, a_av = availability_masks(batch, cfg.modality_dropout)
@@ -430,10 +442,18 @@ def train(cfg):
                     opt.zero_grad(set_to_none=True)
                     accum = 0
 
+                    steps_this_epoch += 1
                     if opt_steps == 1:
                         _host_mem("after-first-step")
                         if device == "cuda":
                             print(f"[mem] peak VRAM {torch.cuda.max_memory_allocated() / 1e9:.2f} GB")
+                    # mid-epoch checkpoint: a killed session loses at most ckpt_every steps
+                    if backup and ckpt_every and steps_this_epoch % ckpt_every == 0:
+                        backup.push_checkpoint(
+                            model, opt, epoch - 1, vars(cfg), {"partial": True},
+                            milestone_every=10 ** 9, keep_milestones=int(getattr(cfg, "keep_milestones", 3)),
+                            resume_extras={"best_auc": best_auc, "partial_epoch": epoch, "partial_samples": seen})
+                        print(f"epoch {epoch} step {opt_steps}: mid-epoch checkpoint pushed ({seen} samples into epoch)")
                     if opt_steps % cfg.log_every == 0 and torch.isfinite(loss):
                         lr_now = opt.param_groups[0]["lr"]
                         print(f"epoch {epoch} step {opt_steps} " +
