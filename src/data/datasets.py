@@ -93,6 +93,7 @@ class AVDeepfakeDataset(Dataset):
                        Defaults to True ONLY when neither root_dir nor shard_root is set.
         """
         self.records = load_manifest(manifest)
+        self.undecodable: dict = {}   # clip_id -> reason, reported at end of training
         if filt is not None:
             self.records = [r for r in self.records if filt(r)]
         self.shard_root = Path(shard_root) if shard_root else None
@@ -171,7 +172,24 @@ class AVDeepfakeDataset(Dataset):
 
     def __getitem__(self, i):
         rec = self.records[i]
-        video, audio, has_v, has_a = self._load_tensors(rec)
+        try:
+            video, audio, has_v, has_a = self._load_tensors(rec)
+        except DecodeError as e:
+            # One undecodable clip must not end a 10-hour run. Before ffmpeg had a
+            # timeout this blocked forever and Kaggle reclaimed the whole session; now
+            # it raises, so substitute a neighbour and record the casualty. The set is
+            # reported at the end of training so the exclusions can go in the paper
+            # rather than silently skewing the split.
+            cid = rec.get("clip_id", f"index:{i}")
+            if cid not in self.undecodable:
+                self.undecodable[cid] = str(e)[:200]
+                print(f"[dataset] UNDECODABLE {cid}: {str(e)[:160]}", flush=True)
+            if len(self.undecodable) > max(20, len(self.records) // 100):
+                raise DecodeError(
+                    f"{len(self.undecodable)} clips failed to decode — this is a broken "
+                    f"mount or manifest, not a few bad files") from e
+            rec = self.records[(i + 1) % len(self.records)]
+            video, audio, has_v, has_a = self._load_tensors(rec)
         dur = float(rec.get("duration_sec", 4.0))
         return {
             "clip_id": rec["clip_id"],

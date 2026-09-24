@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import random
 import shutil
+import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -31,6 +32,13 @@ FFPROBE = shutil.which("ffprobe")
 
 AUDIO_ONLY_EXTS = {".wav", ".flac", ".mp3", ".ogg", ".m4a", ".opus"}
 SAMPLE_RATE = 16000
+
+
+# A wedged ffmpeg used to block forever: the training process stopped producing output,
+# the GPU fell idle, and Kaggle reclaimed the whole session. Decoding one short window
+# takes well under a second; these are generous ceilings, not tuning parameters.
+FFMPEG_TIMEOUT_S = float(os.environ.get("DAVIDNET_FFMPEG_TIMEOUT", "60"))
+FFPROBE_TIMEOUT_S = float(os.environ.get("DAVIDNET_FFPROBE_TIMEOUT", "30"))
 
 
 class DecodeError(RuntimeError):
@@ -80,7 +88,8 @@ def _ffprobe(path: str) -> dict | None:
     try:
         out = subprocess.run(
             [FFPROBE, "-v", "error", "-print_format", "json", "-show_format",
-             "-show_streams", str(path)], capture_output=True, text=True, check=True).stdout
+             "-show_streams", str(path)], capture_output=True, text=True, check=True,
+            timeout=FFPROBE_TIMEOUT_S).stdout
         info = json.loads(out)
     except Exception:
         return None
@@ -130,7 +139,11 @@ def _video_ffmpeg(path: str, start: float, win: float, n_frames: int, size: int)
     cmd = [FFMPEG, "-v", "error", "-nostdin", "-ss", f"{start:.3f}", "-t", f"{win:.3f}",
            "-i", str(path), "-vf", f"fps={n_frames / win:.6f},scale={size}:{size}",
            "-frames:v", str(n_frames), "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
-    res = subprocess.run(cmd, capture_output=True)
+    try:
+        res = subprocess.run(cmd, capture_output=True, timeout=FFMPEG_TIMEOUT_S)
+    except subprocess.TimeoutExpired as e:
+        raise DecodeError(f"ffmpeg video decode timed out after {FFMPEG_TIMEOUT_S:.0f}s "
+                          f"for {path} (window {start:.2f}+{win:.2f}s)") from e
     if res.returncode != 0:
         raise DecodeError(f"ffmpeg video decode failed for {path}: {res.stderr.decode(errors='ignore')[:300]}")
     raw = res.stdout
@@ -181,7 +194,11 @@ def _pad_frames(frames: torch.Tensor, n: int) -> torch.Tensor:
 def _audio_ffmpeg(path: str, start: float, win: float) -> torch.Tensor:
     cmd = [FFMPEG, "-v", "error", "-nostdin", "-ss", f"{start:.3f}", "-t", f"{win:.3f}",
            "-i", str(path), "-vn", "-ac", "1", "-ar", str(SAMPLE_RATE), "-f", "f32le", "-"]
-    res = subprocess.run(cmd, capture_output=True)
+    try:
+        res = subprocess.run(cmd, capture_output=True, timeout=FFMPEG_TIMEOUT_S)
+    except subprocess.TimeoutExpired as e:
+        raise DecodeError(f"ffmpeg audio decode timed out after {FFMPEG_TIMEOUT_S:.0f}s "
+                          f"for {path} (window {start:.2f}+{win:.2f}s)") from e
     if res.returncode != 0:
         err = res.stderr.decode(errors="ignore")
         if "does not contain any stream" in err or "Output file #0 does not contain any stream" in err:
