@@ -189,14 +189,25 @@ def _lr_lambda(warmup_steps: int, total_steps: int, floor: float = 0.01):
     return f
 
 
-def _host_mem(tag: str):
-    """Print host RAM use (Kaggle kills the whole container on RAM OOM, silently)."""
+def _host_mem(tag: str, wd=None):
+    """Record host RAM use (Kaggle kills the whole container on RAM OOM, silently).
+
+    Printing alone is not enough: Kaggle keeps no log for a container that dies, so the
+    reading has to reach HF while the process is still alive. Passing the watchdog pushes
+    each marker immediately, which makes the LAST marker on HF say how far the run got.
+    """
     try:
         import psutil
         vm = psutil.virtual_memory()
-        rss = psutil.Process(os.getpid()).memory_info().rss
+        proc = psutil.Process(os.getpid())
+        rss = proc.memory_info().rss
+        n_child = len(proc.children(recursive=True))
         print(f"[mem:{tag}] process RSS {rss / 1e9:.2f} GB | host used {vm.used / 1e9:.2f} / {vm.total / 1e9:.1f} GB "
-              f"(avail {vm.available / 1e9:.2f} GB)")
+              f"(avail {vm.available / 1e9:.2f} GB) | children {n_child}")
+        if wd is not None:
+            wd.note(f"boot:{tag}", push=True, rss_gb=round(rss / 1e9, 2),
+                    host_used_gb=round(vm.used / 1e9, 2),
+                    host_avail_gb=round(vm.available / 1e9, 2), n_children=n_child)
     except Exception:  # noqa: BLE001
         pass
 
@@ -391,9 +402,10 @@ def train(cfg):
     micro_steps = 0
     opt_steps = start_epoch * steps_per_epoch + skip_samples // (cfg.batch_size * grad_accum)
     nan_restores = 0
-    _host_mem("before-snapshot")
+    _first_batch_seen = False
+    _host_mem("before-snapshot", wd)
     snapshot = _snapshot(model, opt)   # last known-good weights (fp16 CPU copy)
-    _host_mem("after-snapshot")
+    _host_mem("after-snapshot", wd)
     model.train()
     t_run = time.time()
 
@@ -409,6 +421,11 @@ def train(cfg):
             steps_this_epoch = 0
 
             for it, batch in enumerate(train_dl):
+                if not _first_batch_seen:
+                    # the DataLoader workers have forked and decoded their first clips by
+                    # now -- the most plausible unmonitored RAM spike in this window
+                    _first_batch_seen = True
+                    _host_mem("first-batch", wd)
                 if max_micro and it >= max_micro:
                     break
                 seen += batch["video"].size(0)
@@ -473,7 +490,7 @@ def train(cfg):
 
                     steps_this_epoch += 1
                     if opt_steps == 1:
-                        _host_mem("after-first-step")
+                        _host_mem("after-first-step", wd)
                         if device == "cuda":
                             print(f"[mem] peak VRAM {torch.cuda.max_memory_allocated() / 1e9:.2f} GB")
                     # mid-epoch checkpoint: a killed session loses at most ckpt_every steps
