@@ -19,8 +19,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.utils.coordinator import REPO_ID, Coordinator  # noqa: E402
-from src.utils.splits_sync import publish, published_index  # noqa: E402
+from src.utils.coordinator import REPO_ID as COORD_REPO, Coordinator  # noqa: E402
+from src.utils.splits_sync import REPO_ID as MODEL_REPO, publish, published_index  # noqa: E402
 
 
 def _git_commit() -> str:
@@ -90,21 +90,23 @@ def cmd_status(args):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--repo-id", default=REPO_ID)
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     s = sub.add_parser("splits", help="freeze and publish the data partition")
     s.add_argument("--splits-root", required=True, help="dir holding <dataset>/{train,val,test}.jsonl")
     s.add_argument("--force", action="store_true")
+    s.add_argument("--repo-id", default=MODEL_REPO, help="splits live with the artifacts")
     s.set_defaults(func=cmd_splits)
 
     j = sub.add_parser("jobs", help="author the job queue")
     j.add_argument("--seeds", default="42,123,456")
     j.add_argument("--epochs", type=int, default=10)
     j.add_argument("--run-prefix", default="stage1_v3")
+    j.add_argument("--repo-id", default=COORD_REPO, help="control plane repo")
     j.set_defaults(func=cmd_jobs)
 
     st = sub.add_parser("status", help="who is running what, across all accounts")
+    st.add_argument("--repo-id", default=COORD_REPO)
     st.set_defaults(func=cmd_status)
 
     args = ap.parse_args()

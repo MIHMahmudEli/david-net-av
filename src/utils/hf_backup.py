@@ -66,6 +66,15 @@ def _retry(max_retries: int = 3, base_delay: float = 2.0):
     return decorator
 
 
+def _add(repo_path: str, payload):
+    """CommitOperationAdd from either a local path or raw bytes."""
+    import io as _io
+    from huggingface_hub import CommitOperationAdd
+    if isinstance(payload, (bytes, bytearray)):
+        return CommitOperationAdd(path_in_repo=repo_path, path_or_fileobj=_io.BytesIO(payload))
+    return CommitOperationAdd(path_in_repo=repo_path, path_or_fileobj=str(payload))
+
+
 class HFBackup:
     """Crash-proof HuggingFace backup for training runs.
 
@@ -219,6 +228,19 @@ class HFBackup:
         )
 
     @_retry(max_retries=3, base_delay=2.0)
+    def _commit(self, ops, message: str):
+        """One commit for several files.
+
+        HF rate-limits *commits* at 128/hour per repo, and with several workers sharing
+        this repo that ceiling -- not bandwidth -- is the binding constraint. A checkpoint
+        used to cost up to 5 commits (latest, milestone, resume_state, best, best_meta);
+        batching them makes it 1.
+        """
+        api = self._get_api()
+        api.create_commit(repo_id=self.repo_id, repo_type=self.repo_type,
+                          operations=ops, commit_message=message)
+
+    @_retry(max_retries=3, base_delay=2.0)
     def _upload_bytes(self, data: bytes, repo_path: str):
         """Upload bytes with retry."""
         import io
@@ -282,8 +304,8 @@ class HFBackup:
         logger.info(f"[HFBackup] Saved latest checkpoint ({size_gb:.2f} GB), epoch {epoch}")
 
         latest_repo = f"{self.base_path}/checkpoints/epoch_latest.pt"
-        self._upload_file(str(local_latest), latest_repo)
-        local_latest.unlink(missing_ok=True)  # free disk immediately
+        ops = [_add(latest_repo, local_latest)]
+        pending = [local_latest]          # deleted after the commit lands
 
         # ── 2. Milestone checkpoint (model-only, permanent) ────────────────
         is_milestone = (epoch % milestone_every == 0) or (epoch == 0)
@@ -299,11 +321,8 @@ class HFBackup:
             ms_size_gb = local_ms.stat().st_size / (1024 ** 3)
             logger.info(f"[HFBackup] Milestone checkpoint epoch {epoch} ({ms_size_gb:.2f} GB)")
             ms_repo = f"{self.base_path}/checkpoints/epoch_{epoch:04d}.pt"
-            self._upload_file(str(local_ms), ms_repo)
-            local_ms.unlink(missing_ok=True)
-
-            # Prune old milestones on HF (keep only the latest `keep_milestones`)
-            self._prune_hf_milestones(keep_milestones)
+            ops.append(_add(ms_repo, local_ms))
+            pending.append(local_ms)
 
         # ── 3. Update resume_state.json ────────────────────────────────────
         resume_state = {
@@ -314,7 +333,13 @@ class HFBackup:
             **(resume_extras or {}),
         }
         state_bytes = json.dumps(resume_state, indent=2).encode()
-        self._upload_bytes(state_bytes, f"{self.base_path}/state/resume_state.json")
+        ops.append(_add(f"{self.base_path}/state/resume_state.json", state_bytes))
+
+        self._commit(ops, f"checkpoint epoch {epoch} ({self.run_id})")
+        for _p in pending:
+            _p.unlink(missing_ok=True)    # free disk only once it is safely on HF
+        if is_milestone:
+            self._prune_hf_milestones(keep_milestones)
 
         logger.info(f"[HFBackup] Checkpoint epoch {epoch} done "
                     f"({'milestone + ' if is_milestone else ''})latest pushed to HF")
@@ -363,11 +388,12 @@ class HFBackup:
             "metric": metric,
         }, local_path)
 
-        self._upload_file(str(local_path), f"{self.base_path}/best/best.pt")
+        _best_ops = [_add(f"{self.base_path}/best/best.pt", local_path)]
 
         # Also save metric value
         meta = json.dumps({"epoch": epoch, "metric": metric}, indent=2).encode()
-        self._upload_bytes(meta, f"{self.base_path}/best/best_meta.json")
+        _best_ops.append(_add(f"{self.base_path}/best/best_meta.json", meta))
+        self._commit(_best_ops, f"best epoch {epoch} ({self.run_id})")
         logger.info(f"[HFBackup] Pushed best model (epoch {epoch}, metric={metric:.4f})")
 
     def push_log(self, entry: dict):

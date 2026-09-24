@@ -58,16 +58,17 @@ def publish(splits_root: str, repo_id: str = REPO_ID, token: Optional[str] = Non
     if not index:
         raise SystemExit(f"no .jsonl files under {root}")
 
+    # ONE commit for all ~33 split files plus the index. Uploading them individually
+    # cost 34 of the 128 commits/hour this repo is allowed, for no benefit.
+    from huggingface_hub import CommitOperationAdd
     api = HfApi(token=_token(token))
-    for rel in index:
-        api.upload_file(path_or_fileobj=str(root / rel), path_in_repo=f"{SPLITS_PREFIX}/{rel}",
-                        repo_id=repo_id, repo_type="model",
-                        commit_message=f"splits: publish {rel}")
-
     doc = {"files": index, "provenance": extra_provenance or {}}
-    api.upload_file(path_or_fileobj=json.dumps(doc, indent=1).encode(),
-                    path_in_repo=f"{SPLITS_PREFIX}/{MANIFEST_NAME}", repo_id=repo_id,
-                    repo_type="model", commit_message="splits: publish hash index")
+    ops = [CommitOperationAdd(path_in_repo=f"{SPLITS_PREFIX}/{rel}",
+                              path_or_fileobj=str(root / rel)) for rel in index]
+    ops.append(CommitOperationAdd(path_in_repo=f"{SPLITS_PREFIX}/{MANIFEST_NAME}",
+                                  path_or_fileobj=json.dumps(doc, indent=1).encode()))
+    api.create_commit(repo_id=repo_id, repo_type="model", operations=ops,
+                      commit_message=f"splits: publish campaign partition ({len(index)} files)")
     print(f"published {len(index)} split files to {repo_id}/{SPLITS_PREFIX}")
     for rel, meta in index.items():
         print(f"  {meta['lines']:>7} lines  {meta['sha256'][:16]}  {rel}")

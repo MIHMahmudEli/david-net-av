@@ -1,4 +1,4 @@
-"""Multi-worker job coordination over a single HuggingFace repo.
+"""Multi-worker job coordination over a shared HuggingFace repo.
 
 Why: Stage 1 plus the manuscript experiments are ~30 GPU-hours, but a Kaggle batch session
 caps at 12 h. Several Kaggle accounts can therefore work the same queue in parallel, each
@@ -34,9 +34,13 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional
 
-REPO_ID = "MoshinAli/david-net-av-backup"
+# The control plane (jobs, claims, heartbeats) commits far more often than the
+# checkpoints do. HF caps commits per repo per hour, so it gets its own repo and its
+# own budget; `runs/` artifacts stay in the model repo.
+REPO_ID = "MoshinAli/david-net-av-coord"
+REPO_TYPE = "dataset"
 SETTLE_S = 45          # longer than one HF list beat, so other claims become visible
-LEASE_MINUTES = 45     # a session that stops heartbeating this long is presumed dead
+LEASE_MINUTES = 60     # a session that stops heartbeating this long is presumed dead
 
 
 def worker_identity() -> str:
@@ -90,14 +94,14 @@ class Coordinator:
     def _put(self, obj: dict, path: str):
         payload = json.dumps(obj, indent=1, default=str).encode()
         self.api.upload_file(path_or_fileobj=payload, path_in_repo=path, repo_id=self.repo_id,
-                             repo_type="model", commit_message=f"coord: {path}")
+                             repo_type=REPO_TYPE, commit_message=f"coord: {path}")
 
     def _get(self, path: str) -> Optional[dict]:
         # force_download: coordination reads must never come from the local HF cache, or a
         # worker keeps seeing the claim state it saw the first time it looked.
         try:
             from huggingface_hub import hf_hub_download
-            local = hf_hub_download(self.repo_id, path, repo_type="model",
+            local = hf_hub_download(self.repo_id, path, repo_type=REPO_TYPE,
                                     token=self.token, force_download=True)
             return json.load(open(local, encoding="utf-8"))
         except Exception:  # noqa: BLE001 - a missing file is a normal state, not an error
@@ -106,7 +110,7 @@ class Coordinator:
     def _ls(self, prefix: str) -> list:
         try:
             tree = self.api.list_repo_tree(self.repo_id, path_in_repo=prefix,
-                                           repo_type="model", recursive=False)
+                                           repo_type=REPO_TYPE, recursive=False)
             return [f.path for f in tree if getattr(f, "size", None) is not None]
         except Exception:  # noqa: BLE001
             return []
@@ -170,7 +174,7 @@ class Coordinator:
 
     def withdraw(self, job_id: str, reason: str = "yield"):
         try:
-            self.api.delete_file(self._claim_path(job_id), repo_id=self.repo_id, repo_type="model",
+            self.api.delete_file(self._claim_path(job_id), repo_id=self.repo_id, repo_type=REPO_TYPE,
                                  commit_message=f"coord: withdraw {job_id} ({reason})")
         except Exception:  # noqa: BLE001 - already gone is fine
             pass

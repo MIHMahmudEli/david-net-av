@@ -27,7 +27,11 @@ import time
 from pathlib import Path
 from typing import Callable, Optional
 
-REPO_ID = "MoshinAli/david-net-av-backup"
+# Telemetry is high-frequency and small; checkpoints are low-frequency and huge. HF
+# caps commits per REPO per hour, so keeping them in one repo makes the watchdog starve
+# the checkpoints. The control plane lives in its own repo with its own budget.
+REPO_ID = "MoshinAli/david-net-av-coord"
+REPO_TYPE = "dataset"
 
 
 def _sys_snapshot() -> dict:
@@ -72,8 +76,8 @@ class Watchdog:
     """Background telemetry + signal logging for one training process."""
 
     def __init__(self, run_id: str, local_dir: str = "/kaggle/working", interval_s: int = 60,
-                 push_every_s: int = 180, tag: str = "train", token: Optional[str] = None,
-                 fast_push_every_s: int = 45, fast_push_window_s: int = 900):
+                 push_every_s: int = 600, tag: str = "train", token: Optional[str] = None,
+                 fast_push_every_s: int = 60, fast_push_window_s: int = 300):
         self.run_id, self.tag = run_id, tag
         self.interval_s, self.push_every_s = interval_s, push_every_s
         # Deaths cluster in the first minutes of a stage, and a push only lands on HF every
@@ -113,7 +117,7 @@ class Watchdog:
         try:
             from huggingface_hub import HfApi
             HfApi(token=self.token).upload_file(path_or_fileobj=str(self.local), path_in_repo=self.repo_path,
-                                                repo_id=REPO_ID, repo_type="model",
+                                                repo_id=REPO_ID, repo_type=REPO_TYPE,
                                                 commit_message=f"watchdog {self.tag} {self.run_id}")
             self._last_push = time.monotonic()
         except Exception as e:  # noqa: BLE001
@@ -162,8 +166,8 @@ class Watchdog:
 
 
 def start_session_watchdog(session_id: str, local_dir: str = "/kaggle/working", interval_s: int = 60,
-                           push_every_s: int = 120, current_cell: Optional[Callable[[], str]] = None,
-                           fast_push_every_s: int = 45, fast_push_window_s: int = 900) -> Watchdog:
+                           push_every_s: int = 600, current_cell: Optional[Callable[[], str]] = None,
+                           fast_push_every_s: int = 60, fast_push_window_s: int = 300) -> Watchdog:
     """Kernel-level watchdog for the notebook: one line per minute with the same telemetry
     plus which cell is running. Lives in the notebook process, so it keeps reporting after
     a training subprocess dies; its LAST line on HF is the session's time of death."""
