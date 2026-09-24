@@ -190,6 +190,22 @@ def _lr_lambda(warmup_steps: int, total_steps: int, floor: float = 0.01):
     return f
 
 
+def _ckpt_due(step: int, every: int) -> bool:
+    """Dense early, sparse later.
+
+    Every Stage-1 attempt so far has died around the 5-minute mark -- before the 300-step
+    checkpoint -- so nothing was ever saved and each session restarted from zero. Landing
+    the first few checkpoints early means progress accumulates across sessions even if
+    that ceiling is never explained. After 200 steps a run is clearly alive, so fall back
+    to `every` and protect the commit budget (128/hour per repo, shared by 10 workers).
+    """
+    if not every:
+        return False
+    if step in (25, 50, 100, 200):
+        return True
+    return step > 200 and step % every == 0
+
+
 def _host_mem(tag: str, wd=None):
     """Record host RAM use (Kaggle kills the whole container on RAM OOM, silently).
 
@@ -361,7 +377,7 @@ def train(cfg):
     start_epoch = 0
     best_auc = 0.0
     skip_samples = 0                       # mid-epoch resume offset (samples)
-    ckpt_every = int(getattr(cfg, "checkpoint_every_steps", 300) or 0)   # optimizer steps; 0 = off
+    ckpt_every = int(getattr(cfg, "checkpoint_every_steps", 300) or 0)  # optimizer steps; 0 = off
 
     if run_id:
         from src.utils.hf_backup import HFBackup
@@ -499,7 +515,7 @@ def train(cfg):
                         if device == "cuda":
                             print(f"[mem] peak VRAM {torch.cuda.max_memory_allocated() / 1e9:.2f} GB")
                     # mid-epoch checkpoint: a killed session loses at most ckpt_every steps
-                    if backup and ckpt_every and steps_this_epoch % ckpt_every == 0:
+                    if backup and _ckpt_due(steps_this_epoch, ckpt_every):
                         backup.push_checkpoint(
                             model, opt, epoch - 1, vars(cfg), {"partial": True},
                             milestone_every=10 ** 9, keep_milestones=int(getattr(cfg, "keep_milestones", 3)),

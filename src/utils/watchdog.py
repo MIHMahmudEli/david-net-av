@@ -34,6 +34,31 @@ REPO_ID = "MoshinAli/david-net-av-coord"
 REPO_TYPE = "dataset"
 
 
+def _cgroup_mem() -> tuple:
+    """(used_bytes, limit_bytes) for THIS container, or (None, None).
+
+    psutil reports host-level memory and counts reclaimable page cache as available, so
+    it cannot see a cgroup nearing its limit. Kaggle kills on the cgroup number, so that
+    is the one worth watching. cgroup v2 first, then v1.
+    """
+    try:
+        with open("/sys/fs/cgroup/memory.current") as f:
+            used = int(f.read().strip())
+        with open("/sys/fs/cgroup/memory.max") as f:
+            raw = f.read().strip()
+        return used, (None if raw == "max" else int(raw))
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        with open("/sys/fs/cgroup/memory/memory.usage_in_bytes") as f:
+            used = int(f.read().strip())
+        with open("/sys/fs/cgroup/memory/memory.limit_in_bytes") as f:
+            lim = int(f.read().strip())
+        return used, (None if lim > (1 << 62) else lim)
+    except Exception:  # noqa: BLE001
+        return None, None
+
+
 def _sys_snapshot() -> dict:
     snap = {"t": time.strftime("%Y-%m-%dT%H:%M:%S"), "uptime_s": round(time.monotonic(), 1)}
     try:
@@ -54,6 +79,12 @@ def _sys_snapshot() -> dict:
                 snap["shm_total_gb"] = round(u.total / 1e9, 2)
         except Exception:  # noqa: BLE001
             pass
+    cg_used, cg_max = _cgroup_mem()
+    if cg_used is not None:
+        snap["cgroup_used_gb"] = round(cg_used / 1e9, 2)
+        if cg_max:
+            snap["cgroup_max_gb"] = round(cg_max / 1e9, 2)
+            snap["cgroup_pct"] = round(100.0 * cg_used / cg_max, 1)
     try:
         import torch
         if torch.cuda.is_available():
@@ -89,6 +120,10 @@ class Watchdog:
         self.repo_path = f"runs/{run_id}/logs/watchdog_{tag}.jsonl"
         self.token = token or os.environ.get("HF_TOKEN") or os.environ.get("hf")
         self.progress: dict = {}
+        # 2 s samples of the cgroup counter. Shipped with each push, so the last push
+        # before a kill carries the run-up rather than a single stale reading.
+        from collections import deque
+        self._trace = deque(maxlen=90)          # ~3 min of history
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self._last_push = 0.0
@@ -105,6 +140,8 @@ class Watchdog:
 
     def _write(self, extra: dict):
         line = {**_sys_snapshot(), **self.progress, **extra}
+        if self._trace:
+            line["mem_trace"] = list(self._trace)[-45:]   # ~90 s at 2 s resolution
         with self._lock:
             self.local.parent.mkdir(parents=True, exist_ok=True)
             with open(self.local, "a", encoding="utf-8") as f:
@@ -128,13 +165,21 @@ class Watchdog:
             return self.fast_push_every_s
         return self.push_every_s
 
+    def _sample_loop(self):
+        while not self._stop.wait(2.0):
+            used, mx = _cgroup_mem()
+            if used is not None:
+                self._trace.append((time.strftime("%H:%M:%S"), round(used / 1e9, 2),
+                                    round(100.0 * used / mx, 1) if mx else None))
+
     def _loop(self):
         while not self._stop.wait(self.interval_s):
             line = self._write({"event": "tick"})
             print(f"[watchdog] {line.get('t')} ep={line.get('epoch')} micro={line.get('micro')} "
                   f"rss={line.get('rss_gb')}G avail={line.get('host_avail_gb')}G shm_free={line.get('shm_free_gb')}G "
                   f"disk_free={line.get('disk_free_gb')}G vram={line.get('vram_alloc_gb')}G gpu={line.get('gpu_util')}% "
-                  f"ffmpeg={line.get('n_ffmpeg')}", flush=True)
+                  f"ffmpeg={line.get('n_ffmpeg')} cgroup={line.get('cgroup_used_gb')}/"
+                  f"{line.get('cgroup_max_gb')}GB ({line.get('cgroup_pct')}%)", flush=True)
             if time.monotonic() - self._last_push >= self._push_interval():
                 self.push()
 
@@ -145,6 +190,7 @@ class Watchdog:
                   cpu=os.cpu_count())
         self._thread = threading.Thread(target=self._loop, name="watchdog", daemon=True)
         self._thread.start()
+        threading.Thread(target=self._sample_loop, name="watchdog-mem", daemon=True).start()
         return self
 
     def stop(self, event: str = "stop"):
