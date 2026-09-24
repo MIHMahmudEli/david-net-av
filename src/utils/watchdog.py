@@ -72,9 +72,15 @@ class Watchdog:
     """Background telemetry + signal logging for one training process."""
 
     def __init__(self, run_id: str, local_dir: str = "/kaggle/working", interval_s: int = 60,
-                 push_every_s: int = 180, tag: str = "train", token: Optional[str] = None):
+                 push_every_s: int = 180, tag: str = "train", token: Optional[str] = None,
+                 fast_push_every_s: int = 45, fast_push_window_s: int = 900):
         self.run_id, self.tag = run_id, tag
         self.interval_s, self.push_every_s = interval_s, push_every_s
+        # Deaths cluster in the first minutes of a stage, and a push only lands on HF every
+        # `push_every_s` — so the fatal window is exactly what we lose. Push at a fine
+        # cadence for the first `fast_push_window_s`, then back off to keep commits sane.
+        self.fast_push_every_s, self.fast_push_window_s = fast_push_every_s, fast_push_window_s
+        self._t0 = 0.0
         self.local = Path(local_dir) / f"watchdog_{tag}_{run_id}.jsonl"
         self.repo_path = f"runs/{run_id}/logs/watchdog_{tag}.jsonl"
         self.token = token or os.environ.get("HF_TOKEN") or os.environ.get("hf")
@@ -113,6 +119,11 @@ class Watchdog:
         except Exception as e:  # noqa: BLE001
             print(f"[watchdog] push failed: {str(e)[:120]}")
 
+    def _push_interval(self) -> int:
+        if self._t0 and (time.monotonic() - self._t0) < self.fast_push_window_s:
+            return self.fast_push_every_s
+        return self.push_every_s
+
     def _loop(self):
         while not self._stop.wait(self.interval_s):
             line = self._write({"event": "tick"})
@@ -120,10 +131,11 @@ class Watchdog:
                   f"rss={line.get('rss_gb')}G avail={line.get('host_avail_gb')}G shm_free={line.get('shm_free_gb')}G "
                   f"disk_free={line.get('disk_free_gb')}G vram={line.get('vram_alloc_gb')}G gpu={line.get('gpu_util')}% "
                   f"ffmpeg={line.get('n_ffmpeg')}", flush=True)
-            if time.monotonic() - self._last_push >= self.push_every_s:
+            if time.monotonic() - self._last_push >= self._push_interval():
                 self.push()
 
     def start(self):
+        self._t0 = time.monotonic()
         self._install_signal_handlers()
         self.note("start", push=True, pid=os.getpid(), run_type=os.environ.get("KAGGLE_KERNEL_RUN_TYPE"),
                   cpu=os.cpu_count())
@@ -150,12 +162,14 @@ class Watchdog:
 
 
 def start_session_watchdog(session_id: str, local_dir: str = "/kaggle/working", interval_s: int = 60,
-                           push_every_s: int = 120, current_cell: Optional[Callable[[], str]] = None) -> Watchdog:
+                           push_every_s: int = 120, current_cell: Optional[Callable[[], str]] = None,
+                           fast_push_every_s: int = 45, fast_push_window_s: int = 900) -> Watchdog:
     """Kernel-level watchdog for the notebook: one line per minute with the same telemetry
     plus which cell is running. Lives in the notebook process, so it keeps reporting after
     a training subprocess dies; its LAST line on HF is the session's time of death."""
     wd = Watchdog(run_id=f"session_{session_id}", local_dir=local_dir, interval_s=interval_s,
-                  push_every_s=push_every_s, tag="session")
+                  push_every_s=push_every_s, tag="session", fast_push_every_s=fast_push_every_s,
+                  fast_push_window_s=fast_push_window_s)
     if current_cell is not None:
         _orig_write = wd._write
 
