@@ -38,6 +38,7 @@ from src.models.video_encoder import build_video_encoder
 from src.models.audio_encoder import build_audio_encoder
 from src.training.losses import LossWeights, total_loss, distillation_loss
 from src.utils.config import load_config
+from src.utils.parallel import maybe_parallel, parallel_batch_warning, unwrap
 from src.utils.seed import set_seed
 
 logger = logging.getLogger(__name__)
@@ -227,11 +228,11 @@ def _to_cpu(obj):
 
 def _snapshot(model, opt):
     """CPU copy of model + optimizer state (keeps VRAM free on a 15 GB T4)."""
-    return {"model": _to_cpu(model.state_dict()), "optimizer": _to_cpu(opt.state_dict())}
+    return {"model": _to_cpu(unwrap(model).state_dict()), "optimizer": _to_cpu(opt.state_dict())}
 
 
 def _restore(model, opt, snap):
-    model.load_state_dict({k: (v.float() if torch.is_tensor(v) and v.dtype == torch.float16 else v)
+    unwrap(model).load_state_dict({k: (v.float() if torch.is_tensor(v) and v.dtype == torch.float16 else v)
                            for k, v in snap["model"].items()})
     opt.load_state_dict(snap["optimizer"])   # casts state back to the param devices
 
@@ -343,6 +344,10 @@ def train(cfg):
     total_opt_steps = cfg.epochs * steps_per_epoch
     scheduler = torch.optim.lr_scheduler.LambdaLR(
         opt, _lr_lambda(int(warmup_epochs * steps_per_epoch), total_opt_steps))
+    # Wrap last: init_from and gradient checkpointing both reach into the real module.
+    model = maybe_parallel(model, device, enabled=bool(getattr(cfg, "data_parallel", True)))
+    parallel_batch_warning(cfg.batch_size, model)
+
     scaler = torch.amp.GradScaler("cuda", enabled=(device == "cuda"))
     max_norm = float(getattr(cfg, "max_grad_norm", 1.0))
     nan_patience = int(getattr(cfg, "nan_patience", 5))
@@ -380,7 +385,7 @@ def train(cfg):
                 start_epoch = int(meta["partial_epoch"])
                 skip_samples = int(meta.get("partial_samples", 0))
             try:
-                model.load_state_dict(resume["model"])
+                unwrap(model).load_state_dict(resume["model"])
                 opt.load_state_dict(resume["optimizer"])
                 print(f"Resumed from HF: epoch {start_epoch}"
                       f"{f' (+{skip_samples} samples into it)' if skip_samples else ''}, best_auc={best_auc:.4f}")
@@ -603,7 +608,7 @@ def _save(model, cfg, epoch, tag: str = "last"):
     d = os.path.join(cfg.out_dir, run_id)
     os.makedirs(d, exist_ok=True)
     path = os.path.join(d, f"{tag}.pt")
-    torch.save({"model": model.state_dict(), "cfg": vars(cfg), "epoch": epoch}, path)
+    torch.save({"model": unwrap(model).state_dict(), "cfg": vars(cfg), "epoch": epoch}, path)
     print(f"saved {path}")
     return path
 

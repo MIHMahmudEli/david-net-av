@@ -42,6 +42,8 @@ from functools import wraps
 from pathlib import Path
 from typing import Optional
 
+from src.utils.parallel import unwrap
+
 logger = logging.getLogger(__name__)
 
 
@@ -290,7 +292,7 @@ class HFBackup:
 
         # ── 1. Latest checkpoint (full state, overwrites) ──────────────────
         state_full = {
-            "model": model.state_dict(),
+            "model": unwrap(model).state_dict(),
             "optimizer": optimizer.state_dict(),
             "epoch": epoch,
             "config": config,
@@ -311,7 +313,7 @@ class HFBackup:
         is_milestone = (epoch % milestone_every == 0) or (epoch == 0)
         if is_milestone:
             state_model_only = {
-                "model": model.state_dict(),
+                "model": unwrap(model).state_dict(),
                 "epoch": epoch,
                 "config": config,
                 **(extra or {}),
@@ -383,7 +385,7 @@ class HFBackup:
         ckpt_dir.mkdir(parents=True, exist_ok=True)
         local_path = ckpt_dir / "best.pt"
         torch.save({
-            "model": model.state_dict(),
+            "model": unwrap(model).state_dict(),
             "epoch": epoch,
             "metric": metric,
         }, local_path)
@@ -432,7 +434,7 @@ class HFBackup:
         try:
             logger.warning(f"[HFBackup] Emergency push at epoch {epoch}")
             import torch
-            state = {"model": model.state_dict(), "epoch": epoch}
+            state = {"model": unwrap(model).state_dict(), "epoch": epoch}
             # Write to a BytesIO buffer to avoid disk space issues
             import io
             buf = io.BytesIO()

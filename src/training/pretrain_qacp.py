@@ -31,6 +31,7 @@ from src.data.synthetic_quadrants import QACPDataset, QACPBalancedSampler, colla
 from src.training.losses import at_loss_floor, qacp_loss, supcon_floors
 from src.training.train import build_model, move, enable_gradient_checkpointing, _lr_lambda
 from src.utils.config import load_config
+from src.utils.parallel import maybe_parallel, parallel_batch_warning, unwrap
 from src.utils.seed import set_seed
 
 logger = logging.getLogger(__name__)
@@ -78,6 +79,8 @@ def pretrain(cfg):
 
     total_p = sum(p.numel() for p in model.parameters())
     trainable_p = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    model = maybe_parallel(model, device, enabled=bool(getattr(cfg, "data_parallel", True)))
+    parallel_batch_warning(cfg.batch_size, model)
     print(f"[qacp] Parameters: {trainable_p:,} trainable / {total_p:,} total "
           f"({100.0 * trainable_p / max(total_p, 1):.1f}%)")
     if trainable_p == 0:
@@ -135,7 +138,7 @@ def pretrain(cfg):
         if _resume is not None:
             start_epoch = _resume.get("epoch", -1) + 1
             try:
-                model.load_state_dict(_resume["model"])
+                unwrap(model).load_state_dict(_resume["model"])
                 opt.load_state_dict(_resume["optimizer"])
                 print(f"QACP resumed from HF: epoch {start_epoch}")
             except Exception as e:  # noqa: BLE001
@@ -259,7 +262,7 @@ def pretrain(cfg):
             if not backup:
                 os.makedirs(cfg.out_dir, exist_ok=True)
                 path = f"{cfg.out_dir}/qacp_epoch{epoch}.pt"
-                torch.save({"model": model.state_dict(), "cfg": vars(cfg)}, path)
+                torch.save({"model": unwrap(model).state_dict(), "cfg": vars(cfg)}, path)
                 print(f"saved {path}")
 
             floor_frac = floor_steps / max(1, epoch_steps)
