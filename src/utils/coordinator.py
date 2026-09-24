@@ -50,8 +50,12 @@ def worker_identity() -> str:
     the options; always append a session nonce, because two sessions on the SAME account
     must not be able to impersonate each other's lease.
     """
-    who = (os.environ.get("KAGGLE_USER_NAME") or os.environ.get("KAGGLE_USERNAME")
-           or os.environ.get("KAGGLE_KERNEL_OWNER") or socket.gethostname() or "worker")
+    # Kaggle does NOT set the owner env vars in a batch session -- a real run identified
+    # itself as "5930701ab423", a container hostname, which tells you nothing about which
+    # of ten accounts holds a lease. DAVIDNET_WORKER lets each account name itself.
+    who = (os.environ.get("DAVIDNET_WORKER") or os.environ.get("KAGGLE_USER_NAME")
+           or os.environ.get("KAGGLE_USERNAME") or os.environ.get("KAGGLE_KERNEL_OWNER")
+           or socket.gethostname() or "worker")
     nonce = os.environ.get("DAVIDNET_SESSION_ID") or time.strftime("%m%d%H%M%S")
     return f"{who}-{nonce}"
 
