@@ -1,6 +1,7 @@
 """Multi-task loss for DAVID-Net. See docs/02_architecture.md §8."""
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import torch
@@ -127,6 +128,30 @@ def supcon_loss(features, labels, temperature: float = 0.1):
     # zero-out non-positives BEFORE summing (log_prob has -inf on the diagonal; -inf*0=NaN)
     mean_log_prob_pos = log_prob.masked_fill(~pos_mask, 0.0).sum(1)[valid] / n_pos[valid]
     return -mean_log_prob_pos.mean()
+
+
+def supcon_floors(batch_size: int) -> tuple:
+    """The values `supcon_loss` bottoms out at, depending on how labels fall in a batch.
+
+    With NO negatives every non-self entry is a positive, so the objective becomes the
+    cross-entropy against a uniform target and its minimum is ln(B-1). With exactly one
+    negative it is ln(2). With the labels split evenly it is ~0. Reaching any of these
+    with no gradient means the term has nothing left to teach.
+
+    Measured on Kaggle: QACP sat at exactly (ln2, ln2, ln3) with gnorm 0.00 for the last
+    seven of fifteen epochs while `avg_loss` kept posting "NEW BEST", so early stopping
+    never fired. scripts/diagnose_qacp_collapse.py reproduces all three floors from free
+    embedding vectors with no encoder and no data.
+    """
+    return (0.0, math.log(2.0), math.log(max(2.0, batch_size - 1)))
+
+
+def at_loss_floor(parts: dict, batch_size: int,
+                  keys=("qacp_v", "qacp_a", "qacp_c"), tol: float = 2e-3) -> bool:
+    """True when every SupCon term in `parts` sits on one of its analytic floors."""
+    floors = supcon_floors(batch_size)
+    vals = [parts[k] for k in keys if k in parts]
+    return bool(vals) and all(any(abs(v - f) < tol for f in floors) for v in vals)
 
 
 def qacp_loss(out: dict, batch: dict, temperature: float = 0.1):

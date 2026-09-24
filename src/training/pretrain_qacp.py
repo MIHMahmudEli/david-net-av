@@ -28,7 +28,7 @@ from torch.utils.data import DataLoader
 
 from src.data.datasets import AVDeepfakeDataset, preflight_check
 from src.data.synthetic_quadrants import QACPDataset, QACPBalancedSampler, collate_qacp
-from src.training.losses import qacp_loss
+from src.training.losses import at_loss_floor, qacp_loss, supcon_floors
 from src.training.train import build_model, move, enable_gradient_checkpointing, _lr_lambda
 from src.utils.config import load_config
 from src.utils.seed import set_seed
@@ -155,6 +155,10 @@ def pretrain(cfg):
     micro_steps = 0
     opt_steps = start_epoch * steps_per_epoch
     model.train()
+    # A SupCon term parked on its analytic floor has nothing left to teach, but the epoch
+    # average can still improve, so `no_improve` never fires. Count floor steps instead.
+    floor_patience = int(getattr(cfg, "floor_patience", 2))
+    floor_epochs = 0
     best_loss = float("inf") if _resume is None else _resume.get("best_loss", float("inf"))
     no_improve = 0 if _resume is None else _resume.get("no_improve", 0)
 
@@ -174,6 +178,7 @@ def pretrain(cfg):
             ds.set_epoch(epoch)
             sampler.set_epoch(epoch)
             epoch_loss, epoch_steps, skipped = 0.0, 0, 0
+            floor_steps = 0
             parts_sum = {}
             t_epoch = time.time()
             opt.zero_grad(set_to_none=True)
@@ -203,6 +208,8 @@ def pretrain(cfg):
                 epoch_steps += 1
                 for k, v in parts.items():
                     parts_sum[k] = parts_sum.get(k, 0.0) + v
+                if at_loss_floor(parts, cfg.batch_size):
+                    floor_steps += 1
 
                 if accum >= grad_accum:
                     scaler.unscale_(opt)
@@ -254,6 +261,23 @@ def pretrain(cfg):
                 path = f"{cfg.out_dir}/qacp_epoch{epoch}.pt"
                 torch.save({"model": model.state_dict(), "cfg": vars(cfg)}, path)
                 print(f"saved {path}")
+
+            floor_frac = floor_steps / max(1, epoch_steps)
+            if floor_frac >= 0.9:
+                floor_epochs += 1
+                floors = ", ".join(f"{f:.4f}" for f in supcon_floors(cfg.batch_size))
+                print(f"[qacp] !! {floor_frac:.0%} of steps sat on a SupCon floor "
+                      f"({floors}) -- the objective has nothing left to teach at "
+                      f"batch_size={cfg.batch_size} ({floor_epochs}/{floor_patience} epochs)")
+            else:
+                floor_epochs = 0
+
+            if floor_epochs >= floor_patience:
+                print(f"[qacp] STOPPING: the loss has been at its floor for "
+                      f"{floor_epochs} epochs. Raise batch_size (more negatives per "
+                      f"anchor) or add a negative queue; see "
+                      f"scripts/diagnose_qacp_collapse.py. Further epochs learn nothing.")
+                no_improve = patience          # reuse the early-stop exit path below
 
             if no_improve >= patience:
                 print(f"[qacp] Early stopping: no improvement for {patience} epochs")
