@@ -26,6 +26,7 @@ import argparse
 import json
 import multiprocessing as mp
 import os
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -106,6 +107,9 @@ def main():
     ap.add_argument("--limit", type=int, default=0, help="stop after N new clips (smoke test)")
     ap.add_argument("--time-budget-min", type=float, default=0.0,
                     help="stop cleanly after this many minutes so the index is never lost")
+    ap.add_argument("--min-free-gb", type=float, default=1.5,
+                    help="stop cleanly while this much disk remains, rather than "
+                         "dying on ENOSPC with the index half-written")
     args = ap.parse_args()
 
     records, seen = [], set()
@@ -154,6 +158,14 @@ def main():
                 print(f"  {n}/{len(todo)}  {rate:.1f} clips/s  "
                       f"eta {(len(todo) - n) / max(rate, 1e-6) / 60:.0f} min  "
                       f"failed={failed}", flush=True)
+            if n % 250 == 0 and args.min_free_gb:
+                free = shutil.disk_usage(str(Path(args.out))).free / 1e9
+                if free < args.min_free_gb:
+                    print(f"only {free:.2f} GB free -- stopping cleanly with {n} clips "
+                          "done; free space or shrink the corpus, then re-run",
+                          flush=True)
+                    pool.terminate()
+                    break
             if deadline and time.time() > deadline:
                 print(f"time budget reached after {n} clips -- stopping cleanly; "
                       "re-run to continue", flush=True)
