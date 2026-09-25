@@ -23,6 +23,9 @@ def load_config(path: str) -> SimpleNamespace:
         feature_cache=None,   # dir of cached SSL features (Phase A); null = raw inputs
         modality_dropout=0.15,  # prob a training sample loses one stream (never both)
         shard_root=None, train_manifest="src/data/splits/train.jsonl",
+        # Packed pre-decoded clips (scripts/build_clip_cache.py). When set, training
+        # never invokes ffmpeg, which is what made the run survivable on Kaggle.
+        cache_root=None,
         loss_weights=dict(v=1.0, a=1.0, quad=0.5, loc=0.5, sync=0.1, disentangle=0.1),
     )
     defaults.update(data or {})

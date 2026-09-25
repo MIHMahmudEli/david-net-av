@@ -206,6 +206,80 @@ def _ckpt_due(step: int, every: int) -> bool:
     return step > 200 and step % every == 0
 
 
+class MemoryCeiling(RuntimeError):
+    """Raised to stop a run cleanly before the kernel stops it with SIGKILL."""
+
+
+class _MemGuard:
+    """Checkpoint and bail out while there is still room to do so.
+
+    Kaggle enforces a cgroup memory limit (~32 GB) and the kernel kills the whole
+    container with SIGKILL -- exit code 137, "Canceled by backend", no traceback, no
+    saved state. That is how every Stage-1 attempt ended. The cgroup counter includes
+    page cache, so psutil's `available` (which treats reclaimable cache as free) stayed
+    reassuring right up to the kill.
+
+    So watch the number that actually decides, and act on it: drop caches and collect at
+    `warn`, push a checkpoint and raise at `abort`. Losing ten minutes to a clean stop
+    that resumes is strictly better than losing the session to a kill that does not.
+    """
+
+    def __init__(self, backup=None, wd=None, warn: float = 0.85, abort: float = 0.93):
+        from src.utils.watchdog import _cgroup_mem
+        self._read = _cgroup_mem
+        self.backup, self.wd = backup, wd
+        self.warn, self.abort = warn, abort
+        self.warned = False
+        used, limit = self._read()
+        self.enabled = used is not None and bool(limit)
+        if self.enabled:
+            print(f"[memguard] cgroup limit {limit / 1e9:.1f} GB; warn at "
+                  f"{warn:.0%}, checkpoint-and-stop at {abort:.0%}")
+        else:
+            print("[memguard] no cgroup limit visible - guard disabled")
+
+    def check(self, model, opt, epoch, cfg, seen, best_auc):
+        if not self.enabled:
+            return
+        used, limit = self._read()
+        if not limit:
+            return
+        frac = used / limit
+        if frac < self.warn:
+            self.warned = False
+            return
+        if not self.warned:
+            self.warned = True
+            print(f"[memguard] cgroup at {frac:.1%} ({used / 1e9:.1f}/{limit / 1e9:.1f} GB) "
+                  "- collecting", flush=True)
+            import gc
+            gc.collect()
+            used, limit = self._read()
+            frac = used / limit if limit else 0.0
+        if frac < self.abort:
+            return
+        msg = (f"cgroup memory at {frac:.1%} ({used / 1e9:.1f}/{limit / 1e9:.1f} GB) - "
+               "stopping before the kernel does")
+        print(f"[memguard] {msg}", flush=True)
+        if self.wd is not None:
+            try:
+                self.wd.note("memguard:abort", push=True, cgroup_pct=round(100 * frac, 1))
+            except Exception:  # noqa: BLE001
+                pass
+        if self.backup is not None:
+            try:
+                self.backup.push_checkpoint(
+                    model, opt, epoch - 1, vars(cfg), {"partial": True, "memguard": True},
+                    milestone_every=10 ** 9,
+                    keep_milestones=int(getattr(cfg, "keep_milestones", 3)),
+                    resume_extras={"best_auc": best_auc, "partial_epoch": epoch,
+                                   "partial_samples": seen})
+                print("[memguard] checkpoint pushed - this run resumes from here", flush=True)
+            except Exception as e:  # noqa: BLE001
+                print(f"[memguard] checkpoint push FAILED: {e}", flush=True)
+        raise MemoryCeiling(msg)
+
+
 def _host_mem(tag: str, wd=None):
     """Record host RAM use (Kaggle kills the whole container on RAM OOM, silently).
 
@@ -260,13 +334,15 @@ def train(cfg):
 
     # ─── Data ─────────────────────────────────────────────────────────
     root_dir = getattr(cfg, "root_dir", None)
+    cache_root = getattr(cfg, "cache_root", None)
     if getattr(cfg, "feature_cache", None):
         from src.data.datasets import CachedFeatureDataset
         train_ds = CachedFeatureDataset(cfg.train_manifest, cfg.feature_cache,
                                         cfg.n_frames, cfg.audio_len)
     else:
         train_ds = AVDeepfakeDataset(cfg.train_manifest, cfg.shard_root,
-                                     cfg.n_frames, cfg.audio_len, root_dir=root_dir, train=True)
+                                     cfg.n_frames, cfg.audio_len, root_dir=root_dir, train=True,
+                                     cache_root=cache_root)
     preflight_check(train_ds, name="train")
     sampler = BalancedBatchSampler(train_ds.records, cfg.batch_size, seed=cfg.seed)
     train_dl = DataLoader(train_ds, batch_size=cfg.batch_size, sampler=sampler,
@@ -280,7 +356,7 @@ def train(cfg):
     val_dl = None
     if val_manifest and os.path.exists(val_manifest):
         val_ds = AVDeepfakeDataset(val_manifest, cfg.shard_root, cfg.n_frames, cfg.audio_len,
-                                   root_dir=root_dir, train=False)
+                                   root_dir=root_dir, train=False, cache_root=cache_root)
         val_max = int(getattr(cfg, "val_max_clips", 0) or 0)
         if val_max and len(val_ds) > val_max:
             val_ds.records = _stratified_subsample(val_ds.records, val_max)
@@ -424,6 +500,7 @@ def train(cfg):
     opt_steps = start_epoch * steps_per_epoch + skip_samples // (cfg.batch_size * grad_accum)
     nan_restores = 0
     _first_batch_seen = False
+    memguard = _MemGuard(backup, wd)
     _host_mem("before-snapshot", wd)
     snapshot = _snapshot(model, opt)   # last known-good weights (fp16 CPU copy)
     _host_mem("after-snapshot", wd)
@@ -514,6 +591,8 @@ def train(cfg):
                         _host_mem("after-first-step", wd)
                         if device == "cuda":
                             print(f"[mem] peak VRAM {torch.cuda.max_memory_allocated() / 1e9:.2f} GB")
+                    if opt_steps % 10 == 0:
+                        memguard.check(model, opt, epoch, cfg, seen, best_auc)
                     # mid-epoch checkpoint: a killed session loses at most ckpt_every steps
                     if backup and _ckpt_due(steps_this_epoch, ckpt_every):
                         backup.push_checkpoint(
@@ -597,6 +676,17 @@ def train(cfg):
         if wd:
             wd.stop("complete")
         print(f"Training complete. Best mean AUC: {best_auc:.4f}")
+
+    except MemoryCeiling as e:
+        # Not a crash: the guard already pushed a checkpoint. Return normally so the
+        # worker loop records a clean stop and the next session resumes from it, rather
+        # than a traceback that looks like a bug in the model.
+        print(f"\nStopped on the memory ceiling: {e}")
+        print("The checkpoint is on HF; relaunch and it continues from there. "
+              "Lower num_workers or batch_size if it recurs at the same step.")
+        if wd:
+            wd.stop("memory_ceiling")
+        return model
 
     except KeyboardInterrupt:
         print("\nInterrupted — pushing emergency checkpoint...")

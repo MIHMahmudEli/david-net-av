@@ -59,7 +59,8 @@ def pretrain(cfg):
     root_dir = getattr(cfg, "root_dir", None)
     base = AVDeepfakeDataset(cfg.train_manifest, cfg.shard_root, cfg.n_frames, cfg.audio_len,
                              filt=lambda r: r["video_label"] == 0 and r["audio_label"] == 0,
-                             root_dir=root_dir, train=True)
+                             root_dir=root_dir, train=True,
+                             cache_root=getattr(cfg, "cache_root", None))
     print(f"[qacp] {len(base)} pristine (RVRA) clips in {cfg.train_manifest}")
     if len(base) < 2:
         raise RuntimeError("[qacp] need at least 2 RVRA clips (MISMATCH needs a donor)")

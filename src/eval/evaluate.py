@@ -36,7 +36,7 @@ def evaluate(cfg, checkpoint: str, manifest: str) -> dict:
 
     root_dir = getattr(cfg, "root_dir", None)
     ds = AVDeepfakeDataset(manifest, cfg.shard_root, cfg.n_frames, cfg.audio_len,
-                           root_dir=root_dir, train=False)
+                           root_dir=root_dir, train=False, cache_root=getattr(cfg, "cache_root", None))
     preflight_check(ds, name="eval")
     max_clips = int(getattr(cfg, "eval_max_clips", 0) or 0)
     if max_clips and len(ds) > max_clips:

@@ -90,6 +90,7 @@ def sweep(cfg, checkpoint: str, manifest: str) -> dict:
     model.eval()
 
     ds = AVDeepfakeDataset(manifest, cfg.shard_root, cfg.n_frames, cfg.audio_len,
+                           cache_root=getattr(cfg, "cache_root", None),
                            root_dir=getattr(cfg, "root_dir", None), train=False)
     max_clips = int(getattr(cfg, "eval_max_clips", 0) or 0)
     if max_clips and len(ds) > max_clips:

@@ -84,7 +84,7 @@ class AVDeepfakeDataset(Dataset):
     def __init__(self, manifest: str, shard_root: Optional[str] = None,
                  n_frames: int = 16, audio_len: int = 64000, filt=None,
                  root_dir=None, use_faces: bool = False, train: bool = True,
-                 allow_dummy: Optional[bool] = None):
+                 allow_dummy: Optional[bool] = None, cache_root: Optional[str] = None):
         """root_dir: str, Path, or list of str/Path for multi-dataset manifests.
 
         train=True  -> random temporal window per sample (augmentation)
@@ -97,6 +97,12 @@ class AVDeepfakeDataset(Dataset):
         if filt is not None:
             self.records = [r for r in self.records if filt(r)]
         self.shard_root = Path(shard_root) if shard_root else None
+        # Packed pre-decoded cache (src/data/clipcache.py). Preferred over live ffmpeg
+        # decoding: one pread + one JPEG decode per sample, no subprocess, flat memory.
+        self.cache = None
+        if cache_root:
+            from src.data.clipcache import ClipCache
+            self.cache = ClipCache(cache_root)
         if root_dir is None:
             roots = []
         elif isinstance(root_dir, (list, tuple)):
@@ -110,7 +116,7 @@ class AVDeepfakeDataset(Dataset):
         self.train = train
         self.window = "random" if train else "center"
         if allow_dummy is None:
-            allow_dummy = not (self.root_dirs or self.shard_root)
+            allow_dummy = not (self.root_dirs or self.shard_root or self.cache)
         self.allow_dummy = allow_dummy
         if self.allow_dummy:
             warnings.warn("AVDeepfakeDataset: no media source configured -> DUMMY random "
@@ -132,6 +138,18 @@ class AVDeepfakeDataset(Dataset):
 
     def _load_tensors(self, rec):
         """Returns (video, audio, has_video, has_audio); video is (T, 3, 224, 224)."""
+        # 0. Packed clip cache -- the fast path, and the only one that does not fork a
+        #    subprocess per sample. Falls through to live decoding for a clip the cache
+        #    does not hold, so a partially built cache still trains (slowly) rather than
+        #    failing outright.
+        if self.cache is not None and rec.get("clip_id") in self.cache:
+            from src.data.clipcache import CacheError
+            try:
+                return self.cache.read(rec["clip_id"], self.n_frames, self.audio_len,
+                                       self.window)
+            except CacheError as e:
+                raise DecodeError(f"clip_id={rec['clip_id']}: cache read failed: {e}") from e
+
         # 1. Precomputed tensor shards
         if self.shard_root is not None:
             vp = self.shard_root / f"{rec['clip_id']}_video.pt"
@@ -151,6 +169,12 @@ class AVDeepfakeDataset(Dataset):
 
         # 3. Nothing found
         if not self.allow_dummy:
+            if self.cache is not None and not self.root_dirs:
+                raise FileNotFoundError(
+                    f"clip_id={rec['clip_id']} is not in the clip cache at "
+                    f"{self.cache.root} ({len(self.cache)} clips) and no media root is "
+                    "configured to decode it from. Finish building the cache "
+                    "(scripts/build_clip_cache.py) or set root_dir as a fallback.")
             tried = [str(rd / rec.get("rel_path", "?")) for rd in self.root_dirs]
             raise FileNotFoundError(
                 f"clip_id={rec['clip_id']} not found. Tried: {tried}. "
@@ -353,7 +377,23 @@ def preflight_check(ds: AVDeepfakeDataset, n_exist: int = 200, n_decode: int = 2
     if ds.allow_dummy:
         print(f"[preflight:{name}] DUMMY MODE — random tensors (no root_dir / shard_root)")
         return {"dummy": True}
-    if ds.root_dirs:
+    if ds.cache is not None:
+        # Coverage is the number that matters now: a clip the cache lacks falls back to
+        # live ffmpeg decoding, which is the thing this pipeline exists to avoid. Below
+        # 98% the cache build did not finish, so say so before spending GPU hours.
+        cov = ds.cache.coverage(recs)
+        print(f"[preflight:{name}] {len(recs)} records, clip cache {ds.cache.root} "
+              f"({len(ds.cache)} clips), coverage {cov * 100:.2f}%")
+        if cov < 0.98:
+            miss = [r["clip_id"] for r in recs if r.get("clip_id") not in ds.cache][:3]
+            msg = (f"[preflight:{name}] clip cache covers only {cov * 100:.2f}% of this "
+                   f"manifest, e.g. {miss}. Finish scripts/build_clip_cache.py first.")
+            if not ds.root_dirs:
+                raise FileNotFoundError(msg)
+            print(f"WARNING {msg}")
+            print("  a media root is configured, so the gaps decode live (slow, and "
+                  "with the memory profile this cache exists to avoid)")
+    if ds.root_dirs and ds.cache is None:
         idx = random.Random(0).sample(range(len(recs)), min(n_exist, len(recs)))
         missing = [recs[i]["clip_id"] for i in idx if ds._resolve_media(recs[i]) is None]
         frac = 1 - len(missing) / len(idx)
