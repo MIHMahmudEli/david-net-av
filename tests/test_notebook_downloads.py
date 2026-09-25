@@ -19,6 +19,21 @@ TRAIN_NB = REPO / "kaggle_kernel" / "train_kaggle.ipynb"
 BUILD_NB = REPO / "kaggle_kernel" / "build_cache.ipynb"
 
 
+@pytest.fixture(autouse=True)
+def _no_real_downloads(monkeypatch):
+    """Nothing in this module may shell out, whatever the cell body does.
+
+    The first version of these tests injected a stub into the exec namespace, which the
+    cell's own `import subprocess` promptly shadowed. It ran the real
+    `kaggle datasets download`, sat on the cell's timeout=3600 for a full hour, and left
+    11 GB of a partial dfdc-10.zip in pytest's tmp dir. `_run_cell4` patches
+    `subprocess.run` properly now; this is the belt to that pair of braces.
+    """
+    def _refuse(cmd, *a, **kw):
+        raise AssertionError(f"test tried to run a real subprocess: {cmd}")
+    monkeypatch.setattr(subprocess, "run", _refuse)
+
+
 def _cells(nb_path):
     return json.loads(nb_path.read_text(encoding="utf-8"))["cells"]
 
