@@ -42,6 +42,43 @@ from src.data.datasets import load_manifest, resolve_root_dir  # noqa: E402
 _ROOTS: list[Path] = []
 
 
+def _mem() -> dict:
+    """RSS, children and the cgroup counter. Cheap enough to call every few clips."""
+    out = {}
+    try:
+        import psutil
+        pr = psutil.Process(os.getpid())
+        out["rss_gb"] = pr.memory_info().rss / 1e9
+        out["children"] = len(pr.children(recursive=True))
+        vm = psutil.virtual_memory()
+        out["avail_gb"] = vm.available / 1e9
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from src.utils.watchdog import _cgroup_mem
+        used, limit = _cgroup_mem()
+        if used is not None:
+            out["cg_gb"] = used / 1e9
+            if limit:
+                out["cg_max_gb"] = limit / 1e9
+                out["cg_pct"] = 100.0 * used / limit
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
+def _mem_line(tag: str) -> str:
+    m = _mem()
+    bits = [f"rss {m['rss_gb']:.2f}G"] if "rss_gb" in m else []
+    if "children" in m:
+        bits.append(f"kids {m['children']}")
+    if "avail_gb" in m:
+        bits.append(f"avail {m['avail_gb']:.1f}G")
+    if "cg_pct" in m:
+        bits.append(f"cgroup {m['cg_gb']:.1f}/{m['cg_max_gb']:.1f}G ({m['cg_pct']:.0f}%)")
+    return f"[mem:{tag}] " + " | ".join(bits)
+
+
 def _init(roots):
     global _ROOTS
     _ROOTS = [Path(r) for r in roots]
@@ -102,7 +139,15 @@ def main():
     ap.add_argument("--manifest", nargs="+", required=True)
     ap.add_argument("--root", nargs="+", required=True)
     ap.add_argument("--out", required=True)
-    ap.add_argument("--workers", type=int, default=4)
+    # Two, not four. Version 4 died 19 s into decoding with four; whatever the
+    # per-worker cost turns out to be, this halves it, and decoding is I/O bound enough
+    # that two still keep ahead of the writer.
+    ap.add_argument("--workers", type=int, default=2)
+    ap.add_argument("--log-every", type=int, default=25,
+                    help="progress+memory line every N clips; small so a run that dies "
+                         "early still leaves a curve")
+    ap.add_argument("--max-cgroup-pct", type=float, default=88.0,
+                    help="stop cleanly above this %% of the container memory limit")
     ap.add_argument("--maxtasksperchild", type=int, default=200)
     ap.add_argument("--limit", type=int, default=0, help="stop after N new clips (smoke test)")
     ap.add_argument("--time-budget-min", type=float, default=0.0,
@@ -134,6 +179,7 @@ def main():
         writer.close()
         return _report(writer, records, args.out)
 
+    print(_mem_line("before-pool"), flush=True)
     t0 = time.time()
     deadline = t0 + args.time_budget_min * 60 if args.time_budget_min else None
     done = failed = 0
@@ -151,13 +197,23 @@ def main():
                 if failed <= 10:
                     print(f"  FAILED {cid}: {err[:160]}", flush=True)
             n = done + failed
-            if n % 250 == 0:
+            if n == 1:
+                print(_mem_line("first-clip"), flush=True)
+            if n % args.log_every == 0:
                 el = time.time() - t0
                 rate = n / el
-                writer.flush_index()          # cheap insurance against losing the run
+                if n % max(args.log_every * 4, 100) == 0:
+                    writer.flush_index()      # cheap insurance against losing the run
                 print(f"  {n}/{len(todo)}  {rate:.1f} clips/s  "
                       f"eta {(len(todo) - n) / max(rate, 1e-6) / 60:.0f} min  "
-                      f"failed={failed}", flush=True)
+                      f"failed={failed}  {_mem_line('run')[6:]}", flush=True)
+                m = _mem()
+                if args.max_cgroup_pct and m.get("cg_pct", 0) > args.max_cgroup_pct:
+                    print(f"cgroup at {m['cg_pct']:.0f}% -- stopping cleanly with {n} "
+                          "clips done; re-run to continue (or lower --workers)",
+                          flush=True)
+                    pool.terminate()
+                    break
             if n % 250 == 0 and args.min_free_gb:
                 free = shutil.disk_usage(str(Path(args.out))).free / 1e9
                 if free < args.min_free_gb:
