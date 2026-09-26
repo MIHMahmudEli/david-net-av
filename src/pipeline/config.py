@@ -77,7 +77,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "train_view_offsets": [0, 4, 8],   # frame offsets into the 24-frame span (train)
         "eval_view_offset": 4,             # centered 16-frame window (val / test)
         "qacp_variants_per_clip": 4,       # pseudo-fake draws per real training clip
-        "shard_clips": 512,
+        "shard_clips": 512,              # AV corpora (~0.4 GB features + 0.23 GB clip cache)
+        "shard_clips_audio": 4096,       # audio-only corpora (~0.3 GB); keeps commits/h low
         "extract_batch_size": "auto",
     },
 

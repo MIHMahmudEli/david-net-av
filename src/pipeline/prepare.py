@@ -50,7 +50,7 @@ YUNET_URL = ("https://github.com/opencv/opencv_zoo/raw/main/models/face_detectio
 def feature_set_id(cfg: dict, revisions: dict) -> str:
     import hashlib
     spec = {"v": PREPARE_VERSION, "features": {k: v for k, v in cfg["features"].items()
-                                               if k not in ("shard_clips", "extract_batch_size")},
+                                               if k not in ("shard_clips", "shard_clips_audio", "extract_batch_size")},
             "data": {k: cfg["data"][k] for k in ("n_frames", "window_seconds", "sample_rate",
                                                  "frame_size", "cache_frames", "cache_seconds",
                                                  "face_crop")},
@@ -359,10 +359,11 @@ def extract_corpus(*, corpus: str, records: list[dict], root: str, cfg: dict,
     from src.data.synthetic_quadrants import _copy_synthesis_griffinlim, _self_blend_video
     fc = cfg["features"]
     Lv = 8 * fc["video_spatial_grid"] ** 2
-    if all(r.get("modalities") == "audio" for r in records):
+    audio_only = all(r.get("modalities") == "audio" for r in records)
+    if audio_only:
         Lv = 1          # audio-only corpus: one (null) video token, not 128 zero tokens
     recs = sorted(records, key=lambda r: r["clip_id"])
-    shard_n = fc["shard_clips"]
+    shard_n = fc["shard_clips_audio"] if audio_only else fc["shard_clips"]
     n_shards = math.ceil(len(recs) / shard_n)
     prefix = f"features/{fsid}/{corpus}"
     done = {Path(i.path).name for i in data_store.list_files(prefix, recursive=False)
