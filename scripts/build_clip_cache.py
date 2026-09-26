@@ -148,7 +148,13 @@ def main():
                          "early still leaves a curve")
     ap.add_argument("--max-cgroup-pct", type=float, default=88.0,
                     help="stop cleanly above this %% of the container memory limit")
-    ap.add_argument("--maxtasksperchild", type=int, default=200)
+    ap.add_argument("--maxtasksperchild", type=int, default=200,
+                    help="recycle each worker after N clips so a leak in ffmpeg or cv2 "
+                         "cannot accumulate; 0 = never recycle. The 2026-09-26 Kaggle "
+                         "build died cleanly at exactly 2 workers x 200 clips, which is "
+                         "the first fork after the notebook's threads exist -- for a "
+                         "build whose RSS is flat, that fork buys nothing and is the "
+                         "one thing the flat profile does not cover.")
     ap.add_argument("--limit", type=int, default=0, help="stop after N new clips (smoke test)")
     ap.add_argument("--time-budget-min", type=float, default=0.0,
                     help="stop cleanly after this many minutes so the index is never lost")
@@ -185,7 +191,7 @@ def main():
     done = failed = 0
     ctx = mp.get_context("fork" if hasattr(os, "fork") else "spawn")
     pool = ctx.Pool(args.workers, initializer=_init, initargs=(roots,),
-                    maxtasksperchild=args.maxtasksperchild)
+                    maxtasksperchild=args.maxtasksperchild or None)
     try:
         for cid, blob, err in pool.imap_unordered(_one, todo, chunksize=4):
             if err is None:
@@ -206,7 +212,7 @@ def main():
                     writer.flush_index()      # cheap insurance against losing the run
                 print(f"  {n}/{len(todo)}  {rate:.1f} clips/s  "
                       f"eta {(len(todo) - n) / max(rate, 1e-6) / 60:.0f} min  "
-                      f"failed={failed}  {_mem_line('run')[6:]}", flush=True)
+                      f"failed={failed}  {_mem_line('run')[len('[mem:run] '):]}", flush=True)
                 m = _mem()
                 if args.max_cgroup_pct and m.get("cg_pct", 0) > args.max_cgroup_pct:
                     print(f"cgroup at {m['cg_pct']:.0f}% -- stopping cleanly with {n} "
