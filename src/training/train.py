@@ -235,6 +235,19 @@ class _MemGuard:
         if self.enabled:
             print(f"[memguard] cgroup limit {limit / 1e9:.1f} GB; warn at "
                   f"{warn:.0%}, checkpoint-and-stop at {abort:.0%}")
+            frac0 = used / limit
+            if frac0 >= 0.80:
+                print(f"[memguard] cgroup already at {frac0:.1%} "
+                      f"({used / 1e9:.1f}/{limit / 1e9:.1f} GB) BEFORE the first step - "
+                      "both 2026-09-25 Stage-1 deaths booted in this state and were "
+                      "SIGKILLed within a minute; the in-loop check only fires at step 10. "
+                      "Clear the pressure or expect exit 137.", flush=True)
+                if self.wd is not None:
+                    try:
+                        self.wd.note("boot:cgroup_pressured", push=True,
+                                     cgroup_pct=round(100 * frac0, 1))
+                    except Exception:  # noqa: BLE001
+                        pass
         else:
             print("[memguard] no cgroup limit visible - guard disabled")
 
