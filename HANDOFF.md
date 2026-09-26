@@ -5,6 +5,14 @@
 > state, its conventions, every remaining step in order, and the pitfalls already
 > hit once so you don't hit them twice.
 
+
+> **2026-09-26 — Q1 Kaggle pipeline.** Training now runs through
+> `kaggle/davidnet_q1_pipeline.ipynb` + `src/pipeline/` (resumable, HF-persisted, experiment
+> registry, strict identity-disjoint split). Read `docs/09_kaggle_pipeline.md` first. The legacy
+> campaign in `MoshinAli/david-net-av-backup` used a split that leaks target identities
+> (100% of test clips share an identity with training) — its QACP/Stage-1 runs are superseded
+> and must not be reported.
+
 ---
 
 ## 1. What this project is
