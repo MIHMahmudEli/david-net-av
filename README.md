@@ -1,7 +1,8 @@
 # DAVID-Net: Disentangled Audio-Visual Forensic Attribution under Identity-Disjoint Evaluation
 
 [![Paper](https://img.shields.io/badge/Paper-Under%20Review-orange.svg)](#citation)
-[![Model](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Checkpoints-yellow)](https://huggingface.co/MIHMahmudEli/david-net-av-v2)
+[![Model](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Checkpoints-yellow)](https://huggingface.co/MIHMahmudEli/david-net-av)
+[![Datasets](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Preprocessed%20Shards-red)](https://huggingface.co/datasets/MIHMahmudEli/david-net-av)
 [![Experiments](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-160--Run%20Logs-blue)](https://huggingface.co/MIHMahmudEli/davidnet-experiments)
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-Vercel%20Edge-black)](https://david-net-av.vercel.app/)
 [![API Docs](https://img.shields.io/badge/API-FastAPI%20HF%20Spaces-brightgreen)](https://mohsinelis-david-net-av-v2.hf.space/docs)
@@ -124,7 +125,7 @@ Pretrained model weights are hosted on the Hugging Face Hub:
 # Download official release checkpoint (Phase A, 75.6M active parameters)
 python -c "
 from huggingface_hub import hf_hub_download
-hf_hub_download(repo_id='MIHMahmudEli/david-net-av-v2', filename='model.safetensors', local_dir='checkpoints')
+hf_hub_download(repo_id='MIHMahmudEli/david-net-av', filename='david_net_best.safetensors', local_dir='checkpoints')
 "
 ```
 
@@ -179,8 +180,9 @@ python evaluate.py \
 ```
 
 All 160 experimental runs across all 5 seeds, configurations, and baseline comparisons are permanently archived on Hugging Face:
+- **Model Checkpoints**: [huggingface.co/MIHMahmudEli/david-net-av](https://huggingface.co/MIHMahmudEli/david-net-av)
+- **Preprocessed Datasets**: [huggingface.co/datasets/MIHMahmudEli/david-net-av](https://huggingface.co/datasets/MIHMahmudEli/david-net-av)
 - **Experiments Archive**: [huggingface.co/MIHMahmudEli/davidnet-experiments](https://huggingface.co/MIHMahmudEli/davidnet-experiments)
-- **Model Checkpoints**: [huggingface.co/MIHMahmudEli/david-net-av-v2](https://huggingface.co/MIHMahmudEli/david-net-av-v2)
 
 ---
 
