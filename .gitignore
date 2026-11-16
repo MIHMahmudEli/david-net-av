@@ -1,0 +1,36 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*.class
+
+# Checkpoints & model weights
+checkpoints/*.pt
+checkpoints/*.bin
+checkpoints/*.safetensors
+*.safetensors
+*.pt
+*.bin
+*.onnx
+
+# Data & caches
+data/raw/
+data/cache/
+*.mp4
+*.wav
+*.avi
+*.mkv
+*.flac
+
+# Environments & OS
+.venv/
+env/
+venv/
+.env
+.DS_Store
+Thumbs.db
+
+# Logs & temp
+*.log
+runs/
+wandb/
+.pytest_cache/

@@ -1,0 +1,116 @@
+{
+  "files": {
+    "manifests/asvspoof2019-la.jsonl": {
+      "sha256": "c48d48b9335f3e759ec85f8869417528f61531d42948ba3a76941131749bcd64",
+      "bytes": 25200875
+    },
+    "manifests/celeb-df-v2.jsonl": {
+      "sha256": "d80eefbf172f506b76ffc378027edac034de419ea92393e8f080bef21c1b17ee",
+      "bytes": 183034
+    },
+    "manifests/deepfaketimit.jsonl": {
+      "sha256": "9a60ee5e17d8ccf7950fc4a1564f5d5f67c84691bf1d6990516f54a333c28cf8",
+      "bytes": 285752
+    },
+    "manifests/dfdc-10.jsonl": {
+      "sha256": "3c7ecb7772fdfa6e57fe4333b24ad81eb40608256d7cb55697ce9d3be8bc0425",
+      "bytes": 1930000
+    },
+    "manifests/fakeavceleb.jsonl": {
+      "sha256": "c8fd87b3108a65623f07f26e93e3bff51fad154e58058d8cf3bbd237da879f16",
+      "bytes": 10306189
+    },
+    "manifests/in-the-wild.jsonl": {
+      "sha256": "d3589874a946db1555f04d8d97c4294b033eb5c27d87faeb4da0a7f8bf12289d",
+      "bytes": 10917907
+    },
+    "manifests/wavefake.jsonl": {
+      "sha256": "41df6db304b46e3d30758b11566570e9ca240f35fa5f987ff698b929e23412db",
+      "bytes": 4428956
+    },
+    "provenance.json": {
+      "sha256": "bc772baaac92086934590d83a0ee990d08d919efdaae0f68c2d64abd0ec2e961",
+      "bytes": 6158
+    },
+    "split_audit.json": {
+      "sha256": "7db17e77957c55d33c8b459c1cd453d216006346685d7b22d085c1cb0f633609",
+      "bytes": 884
+    },
+    "split_summary.csv": {
+      "sha256": "7b80489330b4cdd66a3ebacf95cf733a49f1dc8000b7cb5087ec79e9125b6037",
+      "bytes": 2023
+    },
+    "splits/legacy/test.jsonl": {
+      "sha256": "272e1740f5e4403887b390bb6ef309bed5486297567473209c301613bb6466f3",
+      "bytes": 2090591
+    },
+    "splits/legacy/train.jsonl": {
+      "sha256": "99ac197a13607517c2835306a9e3ec220c8c39b75d99842aa110280e17210b2e",
+      "bytes": 6697701
+    },
+    "splits/legacy/val.jsonl": {
+      "sha256": "f68199843ab29f6958c27abf0e943262edd815ff4f10e43918988691cdcd0057",
+      "bytes": 1517897
+    },
+    "splits/logo_faceswap/test.jsonl": {
+      "sha256": "00c66086c46c1e2ae28ca057cbb8959f94fc206d09965e4161e8a877ff5dd399",
+      "bytes": 107255
+    },
+    "splits/logo_faceswap/train.jsonl": {
+      "sha256": "3898759d6f439450662670f4cf6cd94a2a01759d1a98a7b31ea22e2377f3cc64",
+      "bytes": 3493429
+    },
+    "splits/logo_faceswap/val.jsonl": {
+      "sha256": "23f78b5fc1a289718607abb4d11c340c2f530416cc4e356e8f4d728c5e0eec60",
+      "bytes": 196885
+    },
+    "splits/logo_fsgan/test.jsonl": {
+      "sha256": "324b3a15cf1e187d8154b0a23e72b25f7728ba9bce8fa175057fc91a7966727e",
+      "bytes": 124335
+    },
+    "splits/logo_fsgan/train.jsonl": {
+      "sha256": "e001fa54ac3842efd4650b9b73e9cae425d766170d90cdaf0ddc7f8e0f392872",
+      "bytes": 2815847
+    },
+    "splits/logo_fsgan/val.jsonl": {
+      "sha256": "ace0c69ea9e3ab7747390f8ddcdd8476f93775f43ac90f6a051f31274d302f4e",
+      "bytes": 187700
+    },
+    "splits/logo_wav2lip/test.jsonl": {
+      "sha256": "c9236919980999a4eaa288932cc15728245f3dfbaeefb41e85c66f6300c049cc",
+      "bytes": 243207
+    },
+    "splits/logo_wav2lip/train.jsonl": {
+      "sha256": "d6706f96e011479e147ede237e1bdf8fcd49591229f39285874d539fdb895603",
+      "bytes": 1220769
+    },
+    "splits/logo_wav2lip/val.jsonl": {
+      "sha256": "07cbadcb358a6af6a7d5711d8ac7045739e4978997bde413dc6fc79a8b5902ea",
+      "bytes": 120917
+    },
+    "splits/strict/test.jsonl": {
+      "sha256": "5177aa5a7a3abd7487b9278a2afd2760fca917cc11f1a52c16920b33edbea4e1",
+      "bytes": 393499
+    },
+    "splits/strict/train.jsonl": {
+      "sha256": "6fed6439c1ef49b2388906da7079b0b3495e93ed6bdd760fc8d7d808846ac308",
+      "bytes": 4089829
+    },
+    "splits/strict/val.jsonl": {
+      "sha256": "2a5c041951eea13db4fcd6918b67eeb8c88ff6a7d19e3ebf94c6b69bb80d0b64",
+      "bytes": 233783
+    }
+  },
+  "created_at": "2026-09-26T23:30:52Z",
+  "protocol": {
+    "split_seed": 42,
+    "fractions": [
+      0.65,
+      0.15,
+      0.2
+    ],
+    "primary": "strict_identity",
+    "supplementary": "legacy_source"
+  },
+  "freeze_sha": "30767e27dae3811f2c9bddffa0ca539ea17f7393d08a39c8f39a5e9fecccd6c4"
+}

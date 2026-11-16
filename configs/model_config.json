@@ -1,0 +1,263 @@
+{
+  "checkpoint": {
+    "background_upload": true,
+    "every_minutes": 20,
+    "every_steps": 500,
+    "keep_last": 2,
+    "prune_resume_state_on_completion": true,
+    "upload_retries": 6
+  },
+  "data": {
+    "cache_frames": 24,
+    "cache_seconds": 6.0,
+    "cross_datasets": {
+      "asvspoof2019-la": {
+        "partition": "eval"
+      },
+      "celeb-df-v2": {
+        "use_official_test_list": true
+      },
+      "deepfaketimit": {},
+      "dfdc-10": {
+        "max_fake": 2500,
+        "max_real": 2500
+      },
+      "in-the-wild": {},
+      "wavefake": {
+        "max_per_generator": 1000
+      }
+    },
+    "face_crop": {
+      "box_scale": 1.8,
+      "decode_max_side": 640,
+      "detect_frames": 4,
+      "detector": "yunet",
+      "enabled": true
+    },
+    "frame_size": 224,
+    "n_frames": 16,
+    "primary": "fakeavceleb",
+    "sample_rate": 16000,
+    "split_fractions": [
+      0.65,
+      0.15,
+      0.2
+    ],
+    "split_protocol": "strict_identity",
+    "split_seed": 42,
+    "subsample_seed": 0,
+    "window_seconds": 4.0
+  },
+  "evaluation": {
+    "bootstrap": 1000,
+    "ci_level": 0.95,
+    "ece_bins": 15,
+    "threshold_policy": "val_eer"
+  },
+  "experiment": {
+    "baseline_model": null,
+    "components": {
+      "copy_synthesis": true,
+      "disentangle": true,
+      "localization": true,
+      "mismatch_class": true,
+      "modality_dropout": true,
+      "multitask": true,
+      "qacp": true,
+      "self_blending": true,
+      "sync": true
+    },
+    "description": "DAVID-Net, QACP-initialised, all components (Phase A).",
+    "group": "proposed",
+    "init_from": "qacp",
+    "name": "davidnet",
+    "split": "strict",
+    "stage": "stage1"
+  },
+  "features": {
+    "audio_model": "microsoft/wavlm-base-plus",
+    "audio_tokens": 50,
+    "dtype": "float16",
+    "eval_view_offset": 4,
+    "extract_batch_size": "auto",
+    "qacp_variants_per_clip": 4,
+    "shard_clips": 512,
+    "shard_clips_audio": 4096,
+    "train_view_offsets": [
+      0,
+      4,
+      8
+    ],
+    "video_model": "MCG-NJU/videomae-base",
+    "video_spatial_grid": 4
+  },
+  "hardware": {
+    "deterministic": true,
+    "num_workers": "auto",
+    "precision": "auto"
+  },
+  "mixed_precision": true,
+  "mode": "full",
+  "model": {
+    "compose_quadrant": false,
+    "d_model": 768,
+    "dropout": 0.1,
+    "n_fusion_layers": 4,
+    "n_heads": 8,
+    "use_disentangle": true,
+    "use_sync": true
+  },
+  "plan": {
+    "groups": null,
+    "only": null,
+    "run_phase_b": true,
+    "stop_on_error": true
+  },
+  "project": {
+    "code_repo": "https://github.com/MIHMahmudEli/david-net-av.git",
+    "code_revision": "main",
+    "hf_data_repo": "MIHMahmudEli/davidnet-q1-data",
+    "hf_private": true,
+    "hf_repo": "MIHMahmudEli/davidnet-q1-experiments",
+    "hf_repo_type": "model",
+    "name": "DAVID-Net-AV",
+    "scratch_dir": "/tmp/davidnet",
+    "work_dir": "/kaggle/working/davidnet"
+  },
+  "seed": 42,
+  "seeds": [
+    42,
+    123,
+    456
+  ],
+  "session": {
+    "heartbeat_minutes": 10.0,
+    "lease_minutes": 30.0,
+    "safety_minutes": 25,
+    "time_budget_hours": 11.5,
+    "worker_name": "kaggle-worker-4"
+  },
+  "smoke": {
+    "datasets": [
+      "fakeavceleb",
+      "in-the-wild"
+    ],
+    "epochs": 2,
+    "every_steps": 3,
+    "max_clips_per_split": 48
+  },
+  "train": {
+    "baseline": {
+      "betas": [
+        0.9,
+        0.999
+      ],
+      "early_stopping_patience": 6,
+      "effective_batch": 64,
+      "epochs": 30,
+      "lr": 0.001,
+      "max_grad_norm": 1.0,
+      "micro_batch": "auto",
+      "min_lr_ratio": 0.01,
+      "nonfinite_patience": 20,
+      "sampler": "sqrt_balanced",
+      "sampler_key": "quadrant",
+      "scheduler": "warmup_cosine",
+      "selection_metric": "val/mean_auc",
+      "warmup_ratio": 0.05,
+      "weight_decay": 0.01
+    },
+    "phase_b": {
+      "betas": [
+        0.9,
+        0.999
+      ],
+      "early_stopping_patience": 3,
+      "effective_batch": 16,
+      "epochs": 6,
+      "gradient_checkpointing": true,
+      "loss_weights": {
+        "a": 1.0,
+        "disentangle": 0.1,
+        "loc": 0.5,
+        "quad": 0.5,
+        "sync": 0.1,
+        "v": 1.0
+      },
+      "lr": 3e-05,
+      "lr_encoder": 1e-05,
+      "max_grad_norm": 1.0,
+      "micro_batch": "auto",
+      "min_lr_ratio": 0.01,
+      "modality_dropout": 0.15,
+      "nonfinite_patience": 20,
+      "sampler": "sqrt_balanced",
+      "sampler_key": "quadrant",
+      "scheduler": "warmup_cosine",
+      "selection_metric": "val/mean_auc",
+      "temporal_augment": true,
+      "unfreeze_top_blocks_audio": 2,
+      "unfreeze_top_blocks_video": 2,
+      "warmup_ratio": 0.1,
+      "weight_decay": 0.05
+    },
+    "qacp": {
+      "betas": [
+        0.9,
+        0.999
+      ],
+      "early_stopping_patience": 8,
+      "effective_batch": 256,
+      "epochs": 40,
+      "items_per_epoch": 4096,
+      "lr": 0.0003,
+      "max_grad_norm": 1.0,
+      "micro_batch": "auto",
+      "min_lr_ratio": 0.01,
+      "nonfinite_patience": 20,
+      "pseudo_classes": [
+        "RVRA",
+        "RVFA",
+        "FVRA",
+        "FVFA",
+        "MISMATCH"
+      ],
+      "scheduler": "warmup_cosine",
+      "selection_metric": "val/qacp_loss",
+      "temperature": 0.1,
+      "warmup_ratio": 0.05,
+      "weight_decay": 0.05
+    },
+    "stage1": {
+      "betas": [
+        0.9,
+        0.999
+      ],
+      "early_stopping_patience": 6,
+      "effective_batch": 64,
+      "epochs": 30,
+      "init_from_qacp": true,
+      "loss_weights": {
+        "a": 1.0,
+        "disentangle": 0.1,
+        "loc": 0.5,
+        "quad": 0.5,
+        "sync": 0.1,
+        "v": 1.0
+      },
+      "lr": 0.0001,
+      "max_grad_norm": 1.0,
+      "micro_batch": "auto",
+      "min_lr_ratio": 0.01,
+      "modality_dropout": 0.15,
+      "nonfinite_patience": 20,
+      "optimizer": "adamw",
+      "sampler": "sqrt_balanced",
+      "sampler_key": "quadrant",
+      "scheduler": "warmup_cosine",
+      "selection_metric": "val/mean_auc",
+      "warmup_ratio": 0.05,
+      "weight_decay": 0.05
+    }
+  }
+}
