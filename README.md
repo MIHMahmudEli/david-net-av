@@ -133,13 +133,13 @@ hf_hub_download(repo_id='MIHMahmudEli/david-net-av', filename='david_net_best.sa
 
 ```bash
 # Multimodal audio-visual evaluation
-python predict.py --input sample_video.mp4 --checkpoint checkpoints/model.safetensors
+python predict.py --input sample_video.mp4 --checkpoint checkpoints/david_net_best.safetensors
 
 # Muted / silent video (routes through acoustic null token)
-python predict.py --input silent_clip.mp4 --checkpoint checkpoints/model.safetensors
+python predict.py --input silent_clip.mp4 --checkpoint checkpoints/david_net_best.safetensors
 
 # Audio-only phone call / voice memo (routes through visual null token)
-python predict.py --input speech_sample.wav --checkpoint checkpoints/model.safetensors
+python predict.py --input speech_sample.wav --checkpoint checkpoints/david_net_best.safetensors
 ```
 
 **Example JSON Output**:
@@ -174,7 +174,7 @@ To evaluate DAVID-Net on the official identity-disjoint test partition of FakeAV
 
 ```bash
 python evaluate.py \
-  --checkpoint checkpoints/model.safetensors \
+  --checkpoint checkpoints/david_net_best.safetensors \
   --manifest manifests/fakeavceleb_test_disjoint.jsonl \
   --batch_size 16
 ```
